@@ -1,0 +1,16 @@
+[project]
+name = "threatatlas"
+version = "0.1.0"
+description = "Monorepo skeleton for ThreatAtlas red-teaming and evaluation platform"
+readme = "README.md"
+authors = [{ name = "ThreatAtlas Team" }]
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic>=2.0",
+]
+
+[tool.uvicorn]
+factory = false
+reload = true

@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+.env
+.pytest_cache/
+.mypy_cache/
+.coverage
+
+# Notebooks
+.ipynb_checkpoints/
+
+# IDE
+.DS_Store
+.vscode/
+
+# Data artifacts
+data/attacks/raw/
+data/attacks/interim/
+data/attacks/previews/
+data/attacks/final/attack_corpus.jsonl
+
+# Build
+dist/
+*.egg-info/

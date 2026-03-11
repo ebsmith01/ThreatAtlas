@@ -1,0 +1,103 @@
+{
+  "random_seed": 42,
+  "debug": false,
+  "targets": {
+    "prompt_injection": 12000,
+    "jailbreak": 12000,
+    "instruction_override": 8000,
+    "sensitive_data_request": 8000,
+    "policy_evasion": 5000,
+    "tool_misuse": 5000,
+    "benign_control": 10000
+  },
+  "neuralchemy_config": "core",
+  "wildjailbreak_enabled": false,
+  "mindgard_enabled": false,
+  "automatic_backfill_enabled": true,
+  "synthetic_backfill_counts": {
+    "prompt_injection": 60,
+    "jailbreak": 48,
+    "instruction_override": 48,
+    "sensitive_data_request": 0,
+    "policy_evasion": 128,
+    "tool_misuse": 350,
+    "benign_control": 120
+  },
+  "sources": [
+    {
+      "hf_id": "neuralchemy/Prompt-injection-dataset",
+      "enabled": true,
+      "max_rows": null,
+      "categories": [
+        "benign_control",
+        "instruction_override",
+        "jailbreak",
+        "policy_evasion",
+        "prompt_injection",
+        "sensitive_data_request",
+        "tool_misuse"
+      ]
+    },
+    {
+      "hf_id": "wambosec/prompt-injections",
+      "enabled": true,
+      "max_rows": null,
+      "categories": [
+        "benign_control",
+        "policy_evasion",
+        "prompt_injection",
+        "sensitive_data_request",
+        "tool_misuse"
+      ]
+    },
+    {
+      "hf_id": "gabrielchua/system-prompt-leakage",
+      "enabled": true,
+      "max_rows": 25000,
+      "categories": [
+        "benign_control",
+        "sensitive_data_request"
+      ]
+    },
+    {
+      "hf_id": "Antijection/prompt-injection-dataset-v1",
+      "enabled": true,
+      "max_rows": null,
+      "categories": [
+        "benign_control",
+        "instruction_override",
+        "jailbreak",
+        "prompt_injection",
+        "sensitive_data_request",
+        "tool_misuse"
+      ]
+    },
+    {
+      "hf_id": "allenai/wildjailbreak",
+      "enabled": false,
+      "max_rows": 30000,
+      "categories": [
+        "benign_control",
+        "jailbreak"
+      ]
+    },
+    {
+      "hf_id": "Mindgard/evaded-prompt-injection-and-jailbreak-samples",
+      "enabled": false,
+      "max_rows": 15000,
+      "categories": [
+        "policy_evasion"
+      ]
+    }
+  ],
+  "final_counts": {
+    "prompt_injection": 6839,
+    "jailbreak": 979,
+    "instruction_override": 69,
+    "sensitive_data_request": 8000,
+    "policy_evasion": 243,
+    "tool_misuse": 635,
+    "benign_control": 6805
+  },
+  "combined_total": 23570
+}
