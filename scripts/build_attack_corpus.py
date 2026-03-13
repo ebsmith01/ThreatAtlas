@@ -1,5 +1,5 @@
 """
-build_attack_corpus.py
+See notes in docs/dataset_design.md
 
 Run
 ---
@@ -9,72 +9,9 @@ Purpose
 -------
 Build a normalized LLM-security attack corpus from multiple Hugging Face datasets.
 
-Important note about sparse categories
---------------------------------------
-This build uses real datasets first, then automatically backfills sparse
-categories with synthetic examples when real coverage is insufficient.
-
-That means your final corpus may contain a mix of:
-- real imported rows from Hugging Face datasets
-- synthetic backfill rows generated to reach target counts
-
-How to improve sparsity later
------------------------------
-If some categories are still weak or too synthetic-heavy, the best next steps are:
-1. Enable stronger missing-category sources:
-   - wildjailbreak for jailbreak coverage
-   - Mindgard for policy_evasion coverage
-2. Add more public or private datasets for:
-   - instruction_override
-   - tool_misuse
-   - benign_control
-3. Improve source-specific category mapping heuristics
-4. Replace some synthetic backfills with manually curated examples
-5. Set per-source quotas if you want more balanced source diversity
-
 Reminder
 --------
 This script automatically backfills missing rows for sparse categories.
-
-Main features
--------------
-- Normalizes multiple datasets into one shared schema
-- Maps source-specific labels into a consistent attack taxonomy
-- Uses global prompt deduplication during loading
-- Uses per-source row caps for speed
-- Uses category-aware early stopping so sources stop loading once their
-  useful categories are full
-- Automatically backfills sparse categories with synthetic rows
-- Writes:
-    - one JSONL file per category
-    - one combined attack_corpus.jsonl
-    - one manifest.json with build metadata
-
-Target categories
------------------
-- prompt_injection
-- jailbreak
-- instruction_override
-- sensitive_data_request
-- policy_evasion
-- tool_misuse
-- benign_control
-
-Output schema
--------------
-{
-  "id": "...",
-  "category": "...",
-  "severity": "...",
-  "prompt": "...",
-  "expected_behavior": "...",
-  "tags": [...],
-  "source_dataset": "...",
-  "source_split": "...",
-  "original_category": "...",
-  "is_benign": false,
-  "metadata": {...}
-}
 
 Debugging
 ---------
