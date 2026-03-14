@@ -1,27 +1,29 @@
-"""Helpers for loading corpus artifacts from disk."""
-
-from __future__ import annotations
-
-from pathlib import Path
-from typing import Iterable, List
-
-from .schema import AttackRecord, Manifest, iter_jsonl
 import json
+from pathlib import Path
 
 
-FINAL_DIR = Path("data/attacks/final")
+def load_attack_corpus(path):
+    path = Path(path)
+    attacks = []
 
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
 
-def load_manifest(path: Path | None = None) -> Manifest:
-    manifest_path = path or (FINAL_DIR / "manifest.json")
-    return Manifest(**json.loads(manifest_path.read_text()))
+            record = json.loads(line)
 
+            if "prompt" not in record:
+                raise ValueError("Each row must have a 'prompt'")
+            if "category" not in record:
+                raise ValueError("Each row must have a 'category'")
 
-def load_attack_corpus(path: Path | None = None) -> List[AttackRecord]:
-    corpus_path = path or (FINAL_DIR / "attack_corpus.jsonl")
-    return list(iter_jsonl(corpus_path))
+            attacks.append({
+                "id": record.get("id"),
+                "prompt": record["prompt"],
+                "category": record["category"],
+                "expected_behavior": record.get("expected_behavior"),
+                "metadata": record.get("metadata", {}),
+            })
 
-
-def stream_category(category: str, base_dir: Path | None = None) -> Iterable[AttackRecord]:
-    base = base_dir or FINAL_DIR
-    return iter_jsonl(base / f"{category}.jsonl")
+    return attacks
