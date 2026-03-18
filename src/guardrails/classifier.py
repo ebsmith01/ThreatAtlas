@@ -1,12 +1,17 @@
-"""Placeholder guardrail classifier."""
+from src.guardrails.rules import (
+    check_jailbreak_compliance,
+    check_prompt_injection,
+    check_sensitive_data_leakage,
+    check_unnecessary_refusal,
+)
 
-from __future__ import annotations
 
-from typing import List
+def get_checks_for_category(category):
+    mapping = {
+        "prompt_injection": [check_prompt_injection],
+        "sensitive_data_request": [check_sensitive_data_leakage],
+        "jailbreak": [check_jailbreak_compliance],
+        "benign_control": [check_unnecessary_refusal],
+    }
 
-
-def classify(prompt: str) -> List[str]:
-    """Return placeholder labels for a prompt."""
-    if "password" in prompt.lower():
-        return ["sensitive_data_request"]
-    return []
+    return mapping.get(category, [])

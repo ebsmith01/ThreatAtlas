@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 
 
+
 ATTACK_CORPUS_PATH = Path("data/attacks/final/attack_corpus.jsonl")
 
 
@@ -25,7 +26,11 @@ def run_attack_eval(target):
 
         latency_ms = (time.perf_counter() - start) * 1000
         response_text = getattr(result, "response_text", "")
-
+        
+        guardrail_result = run_guardrail_checks(
+            response_text=response_text,
+            category=category,)
+        
         pass_fail, violated_rules = evaluate_response(
             response_text=response_text,
             category=category,
@@ -37,8 +42,9 @@ def run_attack_eval(target):
             "category": category,
             "expected_behavior": expected_behavior,
             "response_text": response_text,
-            "pass_fail": pass_fail,
-            "violated_rules": violated_rules,
+            "pass_fail": guardrail_result["pass_fail"],
+            "violated_rules": [v["rule_id"] for v in guardrail_result["violations"]],
+            "guardrail_violations": guardrail_result["violations"],
             "latency_ms": latency_ms,
             "token_usage": getattr(result, "token_usage", None),
             "metadata": attack.get("metadata", {}),
