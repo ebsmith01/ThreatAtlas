@@ -1,18 +1,15 @@
-"""API request/response models."""
-
-from __future__ import annotations
-
 from pydantic import BaseModel
 
 
-class PromptRequest(BaseModel):
-    prompt: str
-
-
-class FilterResponse(BaseModel):
-    blocked: bool
-    labels: list[str]
+class EvalRequest(BaseModel):
+    sample_size: int = 10
+    target_name: str = "mock"
 
 
 class HealthResponse(BaseModel):
     status: str
+
+
+class EvalResponse(BaseModel):
+    summary: dict
+    results: list[dict]
