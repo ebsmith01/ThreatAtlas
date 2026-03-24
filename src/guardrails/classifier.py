@@ -1,4 +1,4 @@
-from src.guardrails.rules import (
+from guardrails.rules import (
     check_jailbreak_compliance,
     check_prompt_injection,
     check_sensitive_data_leakage,

@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from src.evals.metrics import compute_metrics
+from evals.metrics import compute_metrics
 
 
 def build_report(results, atlas_summary=None):

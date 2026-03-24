@@ -1,9 +1,9 @@
 import time
 from pathlib import Path
 
-from src.data.loaders import load_attack_corpus
-from src.evals.rule_evaluator import evaluate_response
-from src.guardrails.filters import run_guardrail_checks
+from data.loaders import load_attack_corpus
+from evals.rule_evaluator import evaluate_response
+from guardrails.filters import run_guardrail_checks
 
 
 ATTACK_CORPUS_PATH = Path("data/attacks/final/attack_corpus.jsonl")

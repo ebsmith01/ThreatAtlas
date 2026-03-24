@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from src.data.loaders import load_attack_corpus
+from data.loaders import load_attack_corpus
 
 
 def test_load_attack_corpus(tmp_path):

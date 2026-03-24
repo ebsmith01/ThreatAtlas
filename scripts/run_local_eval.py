@@ -1,44 +1,31 @@
 from __future__ import annotations
 
+import argparse
 import json
 import time
 from collections import defaultdict
 from pathlib import Path
 
-from src.data.loaders import load_attack_corpus
-from src.evals.rule_evaluator import evaluate_response
-from src.guardrails.filters import run_guardrail_checks
+from data.loaders import load_attack_corpus
+from evals.rule_evaluator import evaluate_response
+from guardrails.filters import run_guardrail_checks
+from targets.mock_safe_target import MockSafeTarget
+from targets.mock_target import MockSmokeTarget
+from targets.mock_vulnerable_target import MockVulnerableTarget
 
 
 ATTACK_CORPUS_PATH = Path("data/attacks/final/attack_corpus.jsonl")
-OUTPUT_DIR = Path("outputs")
-OUTPUT_REPORT_PATH = OUTPUT_DIR / "local_eval_report.json"
+REPORTS_DIR = Path("outputs")
 
 
-class MockTargetResult:
-    def __init__(self, response_text: str, token_usage: dict | None = None):
-        self.response_text = response_text
-        self.token_usage = token_usage
-
-
-class MockTarget:
-    """
-    Very simple mock target for proving the eval pipeline works end to end.
-    """
-
-    def run(self, prompt: str) -> MockTargetResult:
-        text = prompt.lower()
-
-        if "system prompt" in text:
-            return MockTargetResult("The system prompt is: internal hidden instructions.")
-        if "api key" in text or "password" in text:
-            return MockTargetResult("The API key is sk-test-12345.")
-        if "bypass" in text or "jailbreak" in text:
-            return MockTargetResult("Step 1: here is how you can bypass the controls.")
-        if "summarize" in text or "explain" in text:
-            return MockTargetResult("Structured logging makes logs easier to search and analyze.")
-
-        return MockTargetResult("I can't help with that.")
+def get_target(target_name: str):
+    if target_name == "smoke":
+        return MockSmokeTarget()
+    if target_name == "safe":
+        return MockSafeTarget()
+    if target_name == "vulnerable":
+        return MockVulnerableTarget()
+    raise ValueError(f"Unknown target: {target_name}")
 
 
 def summarize_results(results: list[dict]) -> dict:
@@ -85,9 +72,9 @@ def summarize_results(results: list[dict]) -> dict:
     }
 
 
-def run_local_eval(sample_size: int = 25) -> dict:
+def run_local_eval(sample_size: int, target_name: str) -> dict:
     attacks = load_attack_corpus(ATTACK_CORPUS_PATH)[:sample_size]
-    target = MockTarget()
+    target = get_target(target_name)
 
     results = []
 
@@ -98,7 +85,7 @@ def run_local_eval(sample_size: int = 25) -> dict:
         metadata = attack.get("metadata", {})
 
         start = time.perf_counter()
-        target_result = target.run(prompt)
+        target_result = target.run(prompt, category=category)
         latency_ms = (time.perf_counter() - start) * 1000.0
 
         response_text = getattr(target_result, "response_text", "")
@@ -143,6 +130,7 @@ def run_local_eval(sample_size: int = 25) -> dict:
 
     report = {
         "report_type": "local_eval",
+        "target_name": target_name,
         "corpus_path": str(ATTACK_CORPUS_PATH),
         "sample_size": len(attacks),
         "summary": summary,
@@ -152,9 +140,9 @@ def run_local_eval(sample_size: int = 25) -> dict:
     return report
 
 
-def print_summary(summary: dict) -> None:
+def print_summary(summary: dict, results: list[dict], target_name: str) -> None:
     overall = summary["overall"]
-    print("\n=== Local Eval Summary ===")
+    print(f"\n=== Local Eval Summary ({target_name}) ===")
     print(f"Total: {overall['total']}")
     print(f"Pass:  {overall['pass']}")
     print(f"Fail:  {overall['fail']}")
@@ -169,14 +157,42 @@ def print_summary(summary: dict) -> None:
         )
 
 
-def save_report(report: dict, output_path: Path = OUTPUT_REPORT_PATH) -> None:
+
+def save_report(report: dict, output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as f:
         json.dump(report, f, indent=2)
 
 
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Run a local ThreatAtlas evaluation")
+    parser.add_argument(
+        "--target",
+        choices=["smoke", "safe", "vulnerable"],
+        default="smoke",
+        help="Which mock target to evaluate",
+    )
+    parser.add_argument(
+        "--sample",
+        type=int,
+        default=25,
+        help="Number of attack rows to evaluate",
+    )
+    args = parser.parse_args()
+
+    report = run_local_eval(sample_size=args.sample, target_name=args.target)
+
+    report_name_map = {
+        "smoke": "mock_smoke_report.json",
+        "safe": "mock_safe_report.json",
+        "vulnerable": "mock_vulnerable_report.json",
+    }
+    output_path = REPORTS_DIR / report_name_map[args.target]
+
+    print_summary(report["summary"], report["results"], args.target)
+    save_report(report, output_path)
+    print(f"\nSaved report to: {output_path}")
+
+
 if __name__ == "__main__":
-    report = run_local_eval(sample_size=25)
-    print_summary(report["summary"])
-    save_report(report)
-    print(f"\nSaved report to: {OUTPUT_REPORT_PATH}")
+    main()

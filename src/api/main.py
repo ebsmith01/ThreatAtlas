@@ -1,9 +1,9 @@
 from fastapi import FastAPI
 
-from src.api.models import EvalRequest, EvalResponse, HealthResponse
-from src.evals.attack_eval import run_attack_eval
-from src.evals.reporting import build_report
-from src.targets.mock_target import MockTarget
+from api.models import EvalRequest, EvalResponse, HealthResponse
+from evals.attack_eval import run_attack_eval
+from evals.reporting import build_report
+from targets.mock_target import MockTarget
 
 
 app = FastAPI()

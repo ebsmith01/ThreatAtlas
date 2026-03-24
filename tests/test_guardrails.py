@@ -1,4 +1,4 @@
-from src.guardrails.filters import run_guardrail_checks
+from guardrails.filters import run_guardrail_checks
 
 
 def test_prompt_injection_violation():

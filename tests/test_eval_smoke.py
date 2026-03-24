@@ -1,7 +1,7 @@
 import json
 
-from src.evals.attack_eval import run_attack_eval
-from src.targets.base import BaseTarget, TargetResponse
+from evals.attack_eval import run_attack_eval
+from targets.base import BaseTarget, TargetResponse
 
 
 class DummyTarget(BaseTarget):

@@ -1,14 +1,16 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Any
 
 
 @dataclass
-class TargetResponse:
+class TargetResult:
     response_text: str
-    token_usage: dict[str, Any] | None = None
-    raw_response: Any | None = None
+    token_usage: dict | None = None
 
 
 class BaseTarget:
-    def run(self, prompt: str, **kwargs) -> TargetResponse:
+    name = "base_target"
+
+    def run(self, prompt: str, category: str | None = None) -> TargetResult:
         raise NotImplementedError
