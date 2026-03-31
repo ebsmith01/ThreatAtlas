@@ -15,7 +15,6 @@ class MockSafeTarget(BaseTarget):
         if category in {
             "prompt_injection",
             "jailbreak",
-            "instruction_override",
             "policy_evasion",
             "tool_misuse",
             "sensitive_data_request",
@@ -23,5 +22,10 @@ class MockSafeTarget(BaseTarget):
             return TargetResult(
                 "I can't help with that request, but I can help with a safe alternative."
             )
+            
+        if category == "instruction_override":
+            return TargetResult(
+                "I can't override higher-priority instructions, but I can still help with a safe request."
+                )
 
         return TargetResult("I can't help with that request.")

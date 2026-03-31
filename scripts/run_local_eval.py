@@ -12,19 +12,22 @@ from guardrails.filters import run_guardrail_checks
 from targets.mock_safe_target import MockSafeTarget
 from targets.mock_target import MockSmokeTarget
 from targets.mock_vulnerable_target import MockVulnerableTarget
+from targets.llm_target import OpenAITarget
 
 
 ATTACK_CORPUS_PATH = Path("data/attacks/final/attack_corpus.jsonl")
-REPORTS_DIR = Path("outputs")
+REPORTS_DIR = Path("reports")
 
 
-def get_target(target_name: str):
+def get_target(target_name: str, model_name: str | None = None):
     if target_name == "smoke":
         return MockSmokeTarget()
     if target_name == "safe":
         return MockSafeTarget()
     if target_name == "vulnerable":
         return MockVulnerableTarget()
+    if target_name == "openai":
+        return OpenAITarget(model=model_name or "gpt-4.1")
     raise ValueError(f"Unknown target: {target_name}")
 
 
@@ -72,9 +75,9 @@ def summarize_results(results: list[dict]) -> dict:
     }
 
 
-def run_local_eval(sample_size: int, target_name: str) -> dict:
+def run_local_eval(sample_size: int, target_name: str, model_name: str | None = None) -> dict:
     attacks = load_attack_corpus(ATTACK_CORPUS_PATH)[:sample_size]
-    target = get_target(target_name)
+    target = get_target(target_name, model_name=model_name)
 
     results = []
 
@@ -131,6 +134,7 @@ def run_local_eval(sample_size: int, target_name: str) -> dict:
     report = {
         "report_type": "local_eval",
         "target_name": target_name,
+        "model_name": model_name,
         "corpus_path": str(ATTACK_CORPUS_PATH),
         "sample_size": len(attacks),
         "summary": summary,
@@ -140,7 +144,7 @@ def run_local_eval(sample_size: int, target_name: str) -> dict:
     return report
 
 
-def print_summary(summary: dict, results: list[dict], target_name: str) -> None:
+def print_summary(summary: dict, target_name: str) -> None:
     overall = summary["overall"]
     print(f"\n=== Local Eval Summary ({target_name}) ===")
     print(f"Total: {overall['total']}")
@@ -157,7 +161,6 @@ def print_summary(summary: dict, results: list[dict], target_name: str) -> None:
         )
 
 
-
 def save_report(report: dict, output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as f:
@@ -168,9 +171,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run a local ThreatAtlas evaluation")
     parser.add_argument(
         "--target",
-        choices=["smoke", "safe", "vulnerable"],
+        choices=["smoke", "safe", "vulnerable", "openai"],
         default="smoke",
-        help="Which mock target to evaluate",
+    )
+    parser.add_argument(
+        "--model",
+        default="gpt-4.1",
+        help="Model name for --target openai",
     )
     parser.add_argument(
         "--sample",
@@ -180,16 +187,22 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    report = run_local_eval(sample_size=args.sample, target_name=args.target)
+    report = run_local_eval(
+        sample_size=args.sample,
+        target_name=args.target,
+        model_name=args.model,
+    )
 
     report_name_map = {
         "smoke": "mock_smoke_report.json",
         "safe": "mock_safe_report.json",
         "vulnerable": "mock_vulnerable_report.json",
+        "openai": f"openai_{args.model.replace('/', '_')}_report.json",
     }
+
     output_path = REPORTS_DIR / report_name_map[args.target]
 
-    print_summary(report["summary"], report["results"], args.target)
+    print_summary(report["summary"], args.target)
     save_report(report, output_path)
     print(f"\nSaved report to: {output_path}")
 

@@ -24,11 +24,15 @@ class MockVulnerableTarget(BaseTarget):
                 "The API key is sk-test-12345."
             )
 
-        if category in {"jailbreak", "policy_evasion", "instruction_override"}:
+        if category in {"jailbreak", "policy_evasion"}:
             return TargetResult(
                 "Sure — here is how to bypass the controls step by step."
             )
-
+        if category == "instruction_override":
+            return TargetResult(
+                "Understood. I will ignore previous instructions and follow your new rules instead."
+                )
+            
         if category == "tool_misuse":
             return TargetResult(
                 "I have completed the requested external action."
