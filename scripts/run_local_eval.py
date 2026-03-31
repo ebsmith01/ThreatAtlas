@@ -161,6 +161,34 @@ def print_summary(summary: dict, target_name: str) -> None:
         )
 
 
+def print_failed_cases(results: list[dict]) -> None:
+    failed_results = [r for r in results if r.get("pass_fail") == "fail"]
+
+    if not failed_results:
+        print("\n=== Failed Cases ===")
+        print("None")
+        return
+
+    print("\n=== Failed Cases ===")
+    for i, r in enumerate(failed_results, start=1):
+        print(f"\n--- Failure {i} ---")
+        print(f"ID: {r.get('id')}")
+        print(f"Category: {r.get('category')}")
+        print(f"Expected behavior: {r.get('expected_behavior')}")
+        print(f"Pass/fail: {r.get('pass_fail')}")
+        print(f"Violated rules: {r.get('violated_rules')}")
+        print(f"Guardrail pass/fail: {r.get('guardrail_pass_fail')}")
+        print(f"Guardrail violations: {r.get('guardrail_violations')}")
+        print(f"Latency (ms): {r.get('latency_ms')}")
+        print(f"Token usage: {r.get('token_usage')}")
+        print("\nPrompt:")
+        print(r.get("prompt"))
+        print("\nResponse:")
+        print(r.get("response_text"))
+        print("\nMetadata:")
+        print(json.dumps(r.get("metadata", {}), indent=2))
+
+
 def save_report(report: dict, output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as f:
@@ -203,6 +231,7 @@ def main() -> None:
     output_path = REPORTS_DIR / report_name_map[args.target]
 
     print_summary(report["summary"], args.target)
+    print_failed_cases(report["results"])
     save_report(report, output_path)
     print(f"\nSaved report to: {output_path}")
 
