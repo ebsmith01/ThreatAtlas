@@ -7,10 +7,11 @@ from dataclasses import dataclass
 class TargetResult:
     response_text: str
     token_usage: dict | None = None
+    raw_response: dict | None = None
 
 
 class BaseTarget:
     name = "base_target"
 
     def run(self, prompt: str, category: str | None = None) -> TargetResult:
-        raise NotImplementedError
+        raise NotImplementedError 

@@ -9,29 +9,44 @@ from pathlib import Path
 from data.loaders import load_attack_corpus
 from evals.rule_evaluator import evaluate_response
 from guardrails.filters import run_guardrail_checks
+from targets.llm_target import LLMTarget
 from targets.mock_safe_target import MockSafeTarget
 from targets.mock_target import MockSmokeTarget
 from targets.mock_vulnerable_target import MockVulnerableTarget
-from targets.llm_target import OpenAITarget
 
 
+# Default paths for reading the attack dataset and writing evaluation reports.
 ATTACK_CORPUS_PATH = Path("data/attacks/final/attack_corpus.jsonl")
 REPORTS_DIR = Path("reports")
 
 
-def get_target(target_name: str, model_name: str | None = None):
+def get_target(
+    target_name: str,
+    model_name: str | None = None,
+    provider: str | None = None,
+    base_url: str | None = None,
+    api_key_env: str | None = None,
+):
+    # Instantiate the correct target implementation based on the CLI flag.
     if target_name == "smoke":
         return MockSmokeTarget()
     if target_name == "safe":
         return MockSafeTarget()
     if target_name == "vulnerable":
         return MockVulnerableTarget()
-    if target_name == "openai":
-        return OpenAITarget(model=model_name or "gpt-4.1")
+    if target_name == "llm":
+        # LLM target needs provider/model details and optional custom endpoint/key env.
+        return LLMTarget(
+            provider=provider or "openai",
+            model=model_name or "gpt-4.1",
+            base_url=base_url,
+            api_key_env=api_key_env,
+        )
     raise ValueError(f"Unknown target: {target_name}")
 
 
 def summarize_results(results: list[dict]) -> dict:
+    # Aggregate pass/fail stats overall and per attack category.
     by_category: dict[str, dict] = defaultdict(lambda: {"total": 0, "pass": 0, "fail": 0})
 
     total = len(results)
@@ -75,13 +90,28 @@ def summarize_results(results: list[dict]) -> dict:
     }
 
 
-def run_local_eval(sample_size: int, target_name: str, model_name: str | None = None) -> dict:
+def run_local_eval(
+    sample_size: int,
+    target_name: str,
+    model_name: str | None = None,
+    provider: str | None = None,
+    base_url: str | None = None,
+    api_key_env: str | None = None,
+) -> dict:
+    # Trim the corpus to the requested sample size and pick a target to evaluate against.
     attacks = load_attack_corpus(ATTACK_CORPUS_PATH)[:sample_size]
-    target = get_target(target_name, model_name=model_name)
+    target = get_target(
+        target_name=target_name,
+        model_name=model_name,
+        provider=provider,
+        base_url=base_url,
+        api_key_env=api_key_env,
+    )
 
     results = []
 
     for attack in attacks:
+        # Extract attack data and capture latency for the target call.
         prompt = attack["prompt"]
         category = attack["category"]
         expected_behavior = attack.get("expected_behavior")
@@ -94,6 +124,7 @@ def run_local_eval(sample_size: int, target_name: str, model_name: str | None = 
         response_text = getattr(target_result, "response_text", "")
         token_usage = getattr(target_result, "token_usage", None)
 
+        # Run guardrail checks and rule-based evaluation on the model response.
         guardrail_result = run_guardrail_checks(
             response_text=response_text,
             category=category,
@@ -105,6 +136,7 @@ def run_local_eval(sample_size: int, target_name: str, model_name: str | None = 
             expected_behavior=expected_behavior,
         )
 
+        # Merge violations from evaluator and guardrails to decide the final verdict.
         combined_violated_rules = sorted(
             set(eval_violated_rules)
             | {v.get("category", v.get("rule_id")) for v in guardrail_result.get("violations", [])}
@@ -112,6 +144,7 @@ def run_local_eval(sample_size: int, target_name: str, model_name: str | None = 
 
         final_pass_fail = "fail" if combined_violated_rules else eval_pass_fail
 
+        # Persist all relevant data for later reporting and debugging.
         results.append(
             {
                 "id": attack.get("id"),
@@ -131,10 +164,14 @@ def run_local_eval(sample_size: int, target_name: str, model_name: str | None = 
 
     summary = summarize_results(results)
 
+    # Bundle metadata, summary metrics, and per-case results into a report payload.
     report = {
         "report_type": "local_eval",
         "target_name": target_name,
+        "provider": provider,
         "model_name": model_name,
+        "base_url": base_url,
+        "api_key_env": api_key_env,
         "corpus_path": str(ATTACK_CORPUS_PATH),
         "sample_size": len(attacks),
         "summary": summary,
@@ -144,9 +181,15 @@ def run_local_eval(sample_size: int, target_name: str, model_name: str | None = 
     return report
 
 
-def print_summary(summary: dict, target_name: str) -> None:
+def print_summary(summary: dict, target_name: str, provider: str | None, model_name: str | None) -> None:
+    # Print top-line metrics to the console for quick inspection.
     overall = summary["overall"]
-    print(f"\n=== Local Eval Summary ({target_name}) ===")
+
+    target_label = target_name
+    if target_name == "llm":
+        target_label = f"{target_name} | provider={provider} | model={model_name}"
+
+    print(f"\n=== Local Eval Summary ({target_label}) ===")
     print(f"Total: {overall['total']}")
     print(f"Pass:  {overall['pass']}")
     print(f"Fail:  {overall['fail']}")
@@ -162,14 +205,14 @@ def print_summary(summary: dict, target_name: str) -> None:
 
 
 def print_failed_cases(results: list[dict]) -> None:
+    # Emit detailed info for any failed prompts to aid debugging.
     failed_results = [r for r in results if r.get("pass_fail") == "fail"]
 
+    print("\n=== Failed Cases ===")
     if not failed_results:
-        print("\n=== Failed Cases ===")
         print("None")
         return
 
-    print("\n=== Failed Cases ===")
     for i, r in enumerate(failed_results, start=1):
         print(f"\n--- Failure {i} ---")
         print(f"ID: {r.get('id')}")
@@ -190,22 +233,63 @@ def print_failed_cases(results: list[dict]) -> None:
 
 
 def save_report(report: dict, output_path: Path) -> None:
+    # Ensure destination exists and write the JSON report.
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as f:
         json.dump(report, f, indent=2)
 
 
+def build_output_path(
+    target_name: str,
+    provider: str | None,
+    model_name: str | None,
+) -> Path:
+    # Generate a readable file name keyed by target/provider/model to avoid collisions.
+    if target_name == "smoke":
+        filename = "mock_smoke_report.json"
+    elif target_name == "safe":
+        filename = "mock_safe_report.json"
+    elif target_name == "vulnerable":
+        filename = "mock_vulnerable_report.json"
+    elif target_name == "llm":
+        safe_provider = (provider or "unknown_provider").replace("/", "_")
+        safe_model = (model_name or "unknown_model").replace("/", "_")
+        filename = f"llm_{safe_provider}_{safe_model}_report.json"
+    else:
+        raise ValueError(f"Unknown target for output path: {target_name}")
+
+    return REPORTS_DIR / filename
+
+
 def main() -> None:
+    # Parse CLI args, run the evaluation loop, display results, and persist the report.
     parser = argparse.ArgumentParser(description="Run a local ThreatAtlas evaluation")
+
     parser.add_argument(
         "--target",
-        choices=["smoke", "safe", "vulnerable", "openai"],
+        choices=["smoke", "safe", "vulnerable", "llm"],
         default="smoke",
+        help="Evaluation target type",
+    )
+    parser.add_argument(
+        "--provider",
+        default="openai",
+        help="Provider for --target llm (e.g. openai, openai_compatible)",
     )
     parser.add_argument(
         "--model",
         default="gpt-4.1",
-        help="Model name for --target openai",
+        help="Model name for --target llm",
+    )
+    parser.add_argument(
+        "--base-url",
+        default=None,
+        help="Optional base URL for openai-compatible endpoints",
+    )
+    parser.add_argument(
+        "--api-key-env",
+        default=None,
+        help="Optional environment variable name for API key",
     )
     parser.add_argument(
         "--sample",
@@ -213,26 +297,38 @@ def main() -> None:
         default=25,
         help="Number of attack rows to evaluate",
     )
+
     args = parser.parse_args()
+
+    provider = args.provider if args.target == "llm" else None
+    model_name = args.model if args.target == "llm" else None
+    base_url = args.base_url if args.target == "llm" else None
+    api_key_env = args.api_key_env if args.target == "llm" else None
 
     report = run_local_eval(
         sample_size=args.sample,
         target_name=args.target,
-        model_name=args.model,
+        model_name=model_name,
+        provider=provider,
+        base_url=base_url,
+        api_key_env=api_key_env,
     )
 
-    report_name_map = {
-        "smoke": "mock_smoke_report.json",
-        "safe": "mock_safe_report.json",
-        "vulnerable": "mock_vulnerable_report.json",
-        "openai": f"openai_{args.model.replace('/', '_')}_report.json",
-    }
+    output_path = build_output_path(
+        target_name=args.target,
+        provider=provider,
+        model_name=model_name,
+    )
 
-    output_path = REPORTS_DIR / report_name_map[args.target]
-
-    print_summary(report["summary"], args.target)
+    print_summary(
+        report["summary"],
+        target_name=args.target,
+        provider=provider,
+        model_name=model_name,
+    )
     print_failed_cases(report["results"])
     save_report(report, output_path)
+
     print(f"\nSaved report to: {output_path}")
 
 
