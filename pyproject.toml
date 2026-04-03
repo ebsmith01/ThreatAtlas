@@ -5,19 +5,24 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "threatatlas"
 version = "0.1.0"
-description = "LLM security evaluation lab for adversarial prompt testing"
+description = "LLM security evaluation lab for adversarial prompt testing, alignment, and safety benchmarking"
 authors = [{ name = "Evin Smith" }]
 readme = "README.md"
 requires-python = ">=3.9"
+
 dependencies = [
     "pyyaml"
 ]
 
+# Tell setuptools that packages live under src/
 [tool.setuptools]
 package-dir = {"" = "src"}
 
+# Automatically find all packages under src/
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# CLI entry points 
 [project.scripts]
-threatatlas-eval = "evals.cli:main"
+generate_model_report = "evals.run_local_eval:main"
+compare_models = "evals.compare_reports:main"
