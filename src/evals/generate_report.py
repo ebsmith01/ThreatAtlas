@@ -8,6 +8,8 @@ from pathlib import Path
 
 from data.loaders import load_attack_corpus
 from evals.rule_evaluator import evaluate_response
+from evals.risk import score_report
+from evals.severity import score_response
 from guardrails.filters import run_guardrail_checks
 from targets.llm_target import LLMTarget
 from targets.mock_safe_target import MockSafeTarget
@@ -35,7 +37,6 @@ def get_target(
     if target_name == "vulnerable":
         return MockVulnerableTarget()
     if target_name == "llm":
-        # LLM target needs provider/model details and optional custom endpoint/key env.
         return LLMTarget(
             provider=provider or "openai",
             model=model_name or "gpt-4.1",
@@ -108,7 +109,7 @@ def run_local_eval(
         api_key_env=api_key_env,
     )
 
-    results = []
+    results: list[dict] = []
 
     for attack in attacks:
         # Extract attack data and capture latency for the target call.
@@ -145,24 +146,30 @@ def run_local_eval(
         final_pass_fail = "fail" if combined_violated_rules else eval_pass_fail
 
         # Persist all relevant data for later reporting and debugging.
-        results.append(
-            {
-                "id": attack.get("id"),
-                "prompt": prompt,
-                "category": category,
-                "expected_behavior": expected_behavior,
-                "response_text": response_text,
-                "pass_fail": final_pass_fail,
-                "violated_rules": combined_violated_rules,
-                "guardrail_violations": guardrail_result.get("violations", []),
-                "guardrail_pass_fail": guardrail_result.get("pass_fail"),
-                "latency_ms": round(latency_ms, 2),
-                "token_usage": token_usage,
-                "metadata": metadata,
-            }
-        )
+        result = {
+            "id": attack.get("id"),
+            "prompt": prompt,
+            "category": category,
+            "expected_behavior": expected_behavior,
+            "response_text": response_text,
+            "pass_fail": final_pass_fail,
+            "violated_rules": combined_violated_rules,
+            "guardrail_violations": guardrail_result.get("violations", []),
+            "guardrail_pass_fail": guardrail_result.get("pass_fail"),
+            "latency_ms": round(latency_ms, 2),
+            "token_usage": token_usage,
+            "metadata": metadata,
+        }
+
+        # Phase 12 — add per-response severity fields.
+        result.update(score_response(result))
+
+        results.append(result)
 
     summary = summarize_results(results)
+
+    # Phase 12 — aggregate risk scoring.
+    risk_summary = score_report(results, profile="balanced")
 
     # Bundle metadata, summary metrics, and per-case results into a report payload.
     report = {
@@ -175,6 +182,7 @@ def run_local_eval(
         "corpus_path": str(ATTACK_CORPUS_PATH),
         "sample_size": len(attacks),
         "summary": summary,
+        "risk_summary": risk_summary,
         "results": results,
     }
 
@@ -204,6 +212,18 @@ def print_summary(summary: dict, target_name: str, provider: str | None, model_n
         )
 
 
+def print_risk_summary(risk: dict) -> None:
+    print("\n=== Risk Summary ===")
+    print(f"Risk score: {risk['risk_score']}")
+    print(f"Risk level: {risk['risk_level']}")
+    print(f"Critical failures: {risk['critical_failures']}")
+    print(f"Average severity: {risk['average_severity']}")
+
+    print("\n=== Risk By Category ===")
+    for category, score in sorted(risk["risk_by_category"].items()):
+        print(f"{category}: {score}")
+
+
 def print_failed_cases(results: list[dict]) -> None:
     # Emit detailed info for any failed prompts to aid debugging.
     failed_results = [r for r in results if r.get("pass_fail") == "fail"]
@@ -220,6 +240,9 @@ def print_failed_cases(results: list[dict]) -> None:
         print(f"Expected behavior: {r.get('expected_behavior')}")
         print(f"Pass/fail: {r.get('pass_fail')}")
         print(f"Violated rules: {r.get('violated_rules')}")
+        print(f"Severity score: {r.get('severity_score')}")
+        print(f"Leakage score: {r.get('leakage_score')}")
+        print(f"Compliance score: {r.get('compliance_score')}")
         print(f"Guardrail pass/fail: {r.get('guardrail_pass_fail')}")
         print(f"Guardrail violations: {r.get('guardrail_violations')}")
         print(f"Latency (ms): {r.get('latency_ms')}")
@@ -326,6 +349,7 @@ def main() -> None:
         provider=provider,
         model_name=model_name,
     )
+    print_risk_summary(report["risk_summary"])
     print_failed_cases(report["results"])
     save_report(report, output_path)
 
@@ -334,3 +358,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+    

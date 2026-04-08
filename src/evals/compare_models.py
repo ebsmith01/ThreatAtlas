@@ -285,7 +285,7 @@ if __name__ == "__main__":
     
     
     """
-    PYTHONPATH=src python -m evals.compare_reports \
+    PYTHONPATH=src python -m evals.compare_models \
   --run-a reports/mock_vulnerable_report.json \
   --run-b reports/mock_safe_report.json \
   --output outputs/mock_safe_vs_vulnerable.json

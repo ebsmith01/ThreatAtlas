@@ -24,5 +24,6 @@ where = ["src"]
 
 # CLI entry points 
 [project.scripts]
-generate_model_report = "evals.run_local_eval:main"
-compare_models = "evals.compare_reports:main"
+generate-model-report = "evals.generate_report:main"
+compare-models = "evals.compare_models:main"
+
