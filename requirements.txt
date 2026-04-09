@@ -1,3 +1,0 @@
-fastapi
-uvicorn[standard]
-pydantic>=2.0

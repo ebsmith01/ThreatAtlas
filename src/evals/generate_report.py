@@ -19,7 +19,7 @@ from targets.mock_vulnerable_target import MockVulnerableTarget
 
 # Default paths for reading the attack dataset and writing evaluation reports.
 ATTACK_CORPUS_PATH = Path("data/attacks/final/attack_corpus.jsonl")
-REPORTS_DIR = Path("reports")
+REPORTS_DIR = Path("outputs")
 
 
 def get_target(
