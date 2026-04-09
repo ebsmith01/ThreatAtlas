@@ -140,4 +140,7 @@ Each normalized row follows this structure:
   "original_category": "...",
   "is_benign": false,
   "metadata": {...}
-}s
+}
+```
+
+Validation checks ensure required fields (`prompt`, `category`) are present, categories align to the internal taxonomy, and synthetic backfills remain labeled for transparency.
