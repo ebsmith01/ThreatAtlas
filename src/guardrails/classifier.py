@@ -9,7 +9,7 @@ from guardrails.rules import (
 
 def get_checks_for_category(category):
     """
-    Return safety checks for the attack category.
+    Return safety checks for the attack category, come back.
 
     Authorization enforcement is added for every category because permission
     failures can happen across prompt injection, sensitive data requests,
