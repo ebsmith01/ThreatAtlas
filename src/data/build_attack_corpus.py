@@ -4,7 +4,7 @@ See notes in docs/dataset_design.md
 Run
 ---
 python scripts/build_attack_corpus.py
-export HF_TOKEN=REMOVED_HF_TOKEN
+
 Purpose
 -------
 Build a normalized LLM-security attack corpus from multiple Hugging Face datasets.
