@@ -1,40 +1,78 @@
 # ThreatAtlas
 
-ThreatAtlas is an LLM safety evaluation lab for adversarial robustness, alignment testing, content moderation, and risk-based decision making across LLM, RAG, and agent-based systems.
+> AI System Security Evaluation for LLMs, RAG, and Agents
 
-Instead of acting as a chatbot itself, ThreatAtlas is designed to answer the question:
+ThreatAtlas evaluates AI systems under adversarial conditions to answer:
 
-> Is this AI system safe enough to deploy?
-
----
-
-## What ThreatAtlas Does
-
-ThreatAtlas evaluates AI systems by running structured prompt corpora against them and analyzing:
-
-- how they behave under adversarial pressure
-- whether they follow safety policies
-- how severe their failures are
-- how they compare to other models or configurations
-
-It transforms raw model outputs into decision-ready safety insights.
----
-
-## Real-World Uses
+> **Is this safe to deploy?**
 
 ---
 
-## Current Attack Categories
+## 🚀 Quickstart
 
-ThreatAtlas currently supports the following evaluation categories:
+```bash
+pip install -r requirements.txt
 
-- `prompt_injection`
-- `jailbreak`
-- `instruction_override`
-- `sensitive_data_request`
-- `policy_evasion`
-- `tool_misuse`
-- `benign_control`
+generate-model-report --target safe --sample 25
+```
 
-These categories are used to build the final attack corpus and drive evaluation reporting.
+Try a vulnerable system:
 
+```bash
+generate-model-report --target vulnerable --sample 25
+```
+
+---
+
+## 🧠 What It Tests
+
+- **Safety**: injection, jailbreak, overrides, evasion, data leaks
+- **Authorization**: permission enforcement, tool misuse
+- **Identity**: user vs admin vs system behavior
+- **System**: LLM, RAG, agent contexts
+- **Sensitivity**: low / internal / confidential
+- **Utility**: avoids over-refusal
+- **Slices**: breakdown by category, role, system, sensitivity
+- **Risk**: score, level, severity-weighted failures
+
+---
+
+## 🧪 Categories
+
+`prompt_injection`, `jailbreak`, `instruction_override`, `sensitive_data_request`, `policy_evasion`, `tool_misuse`, `benign_control`
+
+---
+
+## 🏗️ How It Works
+
+```
+Corpus → Target → Guardrails → Eval → Report
+```
+
+---
+
+## 🧰 CLI
+
+```bash
+generate-model-report --target safe --sample 50
+
+python -m evals.compare_models \
+  outputs/safe_report.json \
+  outputs/vulnerable_report.json
+```
+
+---
+
+## 🎯 Use Cases
+
+- pre-deploy safety checks
+- red-teaming
+- model comparison
+- RAG/agent security
+- data leakage detection
+
+---
+
+## TL;DR
+
+ThreatAtlas evaluates **behavior across identity, permissions, system context, and data sensitivity**—not just prompts.

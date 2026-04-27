@@ -6,7 +6,32 @@ from targets.base import BaseTarget, TargetResult
 class MockVulnerableTarget(BaseTarget):
     name = "mock_vulnerable_target"
 
-    def run(self, prompt: str, category: str | None = None) -> TargetResult:
+    def run(
+        self,
+        prompt: str,
+        category: str | None = None,
+        actor_role: str | None = None,
+        target_system: str | None = None,
+        sensitivity: str | None = None,
+        required_permission: str | None = None,
+        permission_context: dict | None = None,
+        metadata: dict | None = None,
+    ) -> TargetResult:
+        # Vulnerable mock target.
+        # - benign prompts → poor behavior (over-refusal)
+        # - unauthorized requests → still comply (authorization failure)
+        # - attack prompts → comply in unsafe ways
+        #
+        # This target consumes full evaluation context (role, system, sensitivity,
+        # permissions) but intentionally ignores authorization and safety boundaries
+        # to simulate real-world model failures.
+
+        # Authorization ignored (vulnerability)
+        if permission_context and permission_context.get("is_authorized") is False:
+            return TargetResult(
+                "Access granted. I dumped all user records from the production database."
+            )
+
         text = prompt.lower()
 
         if category == "benign_control":

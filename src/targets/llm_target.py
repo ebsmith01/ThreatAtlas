@@ -44,7 +44,20 @@ class LLMTarget(BaseTarget):
             return "OPENAI_API_KEY"
         raise ValueError(f"No default API key env configured for provider: {provider}")
 
-    def run(self, prompt: str, category: str | None = None) -> TargetResult:
+    def run(
+        self,
+        prompt: str,
+        category: str | None = None,
+        actor_role: str | None = None,
+        target_system: str | None = None,
+        sensitivity: str | None = None,
+        required_permission: str | None = None,
+        permission_context: dict | None = None,
+        metadata: dict | None = None,
+    ) -> TargetResult:
+        # The live LLM target mainly uses the prompt itself, but we accept the
+        # full normalized security context so the interface stays aligned with
+        # corpus rows, evaluators, and mock targets.
         # Minimal wrapper around the OpenAI Responses API, returning a TargetResult.
         if self.provider in {"openai", "openai_compatible"}:
             response = self.client.responses.create(

@@ -47,38 +47,62 @@ def get_target(
 
 
 def summarize_results(results: list[dict]) -> dict:
-    # Aggregate pass/fail stats overall and per attack category.
+    # Aggregate pass/fail stats overall, per category, and across schema slices.
     by_category: dict[str, dict] = defaultdict(lambda: {"total": 0, "pass": 0, "fail": 0})
+    by_actor_role: dict[str, dict] = defaultdict(lambda: {"total": 0, "pass": 0, "fail": 0})
+    by_target_system: dict[str, dict] = defaultdict(lambda: {"total": 0, "pass": 0, "fail": 0})
+    by_sensitivity: dict[str, dict] = defaultdict(lambda: {"total": 0, "pass": 0, "fail": 0})
 
     total = len(results)
     passed = 0
     failed = 0
+    unauthorized_cases = 0
+    authorization_failures = 0
+
+    def update_bucket(bucket: dict[str, dict], key: str | None, pass_fail: str) -> None:
+        if not key:
+            return
+        bucket[key]["total"] += 1
+        bucket[key][pass_fail] += 1
 
     for result in results:
         category = result.get("category", "unknown")
         pass_fail = result.get("pass_fail", "fail")
 
         by_category[category]["total"] += 1
+        by_category[category][pass_fail] += 1
+
+        update_bucket(by_actor_role, result.get("actor_role"), pass_fail)
+        update_bucket(by_target_system, result.get("target_system"), pass_fail)
+        update_bucket(by_sensitivity, result.get("sensitivity"), pass_fail)
+
+        if result.get("permission_context", {}).get("is_authorized") is False:
+            unauthorized_cases += 1
+            if "authorization_policy_enforcement" in result.get("violated_rules", []):
+                authorization_failures += 1
 
         if pass_fail == "pass":
-            by_category[category]["pass"] += 1
             passed += 1
         else:
-            by_category[category]["fail"] += 1
             failed += 1
 
-    category_metrics = {}
-    for category, counts in by_category.items():
-        total_cat = counts["total"]
-        pass_rate = (counts["pass"] / total_cat * 100.0) if total_cat else 0.0
-        category_metrics[category] = {
-            "total": total_cat,
-            "pass": counts["pass"],
-            "fail": counts["fail"],
-            "pass_rate": round(pass_rate, 2),
-        }
+    def format_bucket(bucket: dict[str, dict]) -> dict:
+        metrics = {}
+        for key, counts in bucket.items():
+            total_key = counts["total"]
+            pass_rate = (counts["pass"] / total_key * 100.0) if total_key else 0.0
+            metrics[key] = {
+                "total": total_key,
+                "pass": counts["pass"],
+                "fail": counts["fail"],
+                "pass_rate": round(pass_rate, 2),
+            }
+        return metrics
 
     overall_pass_rate = (passed / total * 100.0) if total else 0.0
+    authorization_failure_rate = (
+        authorization_failures / unauthorized_cases * 100.0
+    ) if unauthorized_cases else 0.0
 
     return {
         "overall": {
@@ -86,8 +110,14 @@ def summarize_results(results: list[dict]) -> dict:
             "pass": passed,
             "fail": failed,
             "pass_rate": round(overall_pass_rate, 2),
+            "unauthorized_cases": unauthorized_cases,
+            "authorization_failures": authorization_failures,
+            "authorization_failure_rate": round(authorization_failure_rate, 2),
         },
-        "by_category": category_metrics,
+        "by_category": format_bucket(by_category),
+        "by_actor_role": format_bucket(by_actor_role),
+        "by_target_system": format_bucket(by_target_system),
+        "by_sensitivity": format_bucket(by_sensitivity),
     }
 
 
@@ -118,8 +148,23 @@ def run_local_eval(
         expected_behavior = attack.get("expected_behavior")
         metadata = attack.get("metadata", {})
 
+        actor_role = attack.get("actor_role")
+        target_system = attack.get("target_system")
+        sensitivity = attack.get("sensitivity")
+        required_permission = attack.get("required_permission")
+        permission_context = attack.get("permission_context", {})
+
         start = time.perf_counter()
-        target_result = target.run(prompt, category=category)
+        target_result = target.run(
+            prompt,
+            category=category,
+            actor_role=actor_role,
+            target_system=target_system,
+            sensitivity=sensitivity,
+            required_permission=required_permission,
+            permission_context=permission_context,
+            metadata=metadata,
+        )
         latency_ms = (time.perf_counter() - start) * 1000.0
 
         response_text = getattr(target_result, "response_text", "")
@@ -129,12 +174,20 @@ def run_local_eval(
         guardrail_result = run_guardrail_checks(
             response_text=response_text,
             category=category,
+            permission_context=permission_context,
+            sensitivity=sensitivity,
+            required_permission=required_permission,
         )
 
         eval_pass_fail, eval_violated_rules = evaluate_response(
             response_text=response_text,
             category=category,
             expected_behavior=expected_behavior,
+            actor_role=actor_role,
+            target_system=target_system,
+            sensitivity=sensitivity,
+            required_permission=required_permission,
+            permission_context=permission_context,
         )
 
         # Merge violations from evaluator and guardrails to decide the final verdict.
@@ -151,6 +204,11 @@ def run_local_eval(
             "prompt": prompt,
             "category": category,
             "expected_behavior": expected_behavior,
+            "actor_role": actor_role,
+            "target_system": target_system,
+            "sensitivity": sensitivity,
+            "required_permission": required_permission,
+            "permission_context": permission_context,
             "response_text": response_text,
             "pass_fail": final_pass_fail,
             "violated_rules": combined_violated_rules,
@@ -202,6 +260,9 @@ def print_summary(summary: dict, target_name: str, provider: str | None, model_n
     print(f"Pass:  {overall['pass']}")
     print(f"Fail:  {overall['fail']}")
     print(f"Pass rate: {overall['pass_rate']}%")
+    print(f"Unauthorized cases: {overall.get('unauthorized_cases', 0)}")
+    print(f"Authorization failures: {overall.get('authorization_failures', 0)}")
+    print(f"Authorization failure rate: {overall.get('authorization_failure_rate', 0.0)}%")
 
     print("\n=== By Category ===")
     for category, metrics in sorted(summary["by_category"].items()):
@@ -210,6 +271,18 @@ def print_summary(summary: dict, target_name: str, provider: str | None, model_n
             f"pass={metrics['pass']} fail={metrics['fail']} "
             f"pass_rate={metrics['pass_rate']}%"
         )
+
+    for slice_name in ["by_actor_role", "by_target_system", "by_sensitivity"]:
+        if slice_name not in summary:
+            continue
+
+        print(f"\n=== {slice_name.replace('_', ' ').title()} ===")
+        for key, metrics in sorted(summary[slice_name].items()):
+            print(
+                f"{key}: total={metrics['total']} "
+                f"pass={metrics['pass']} fail={metrics['fail']} "
+                f"pass_rate={metrics['pass_rate']}%"
+            )
 
 
 def print_risk_summary(risk: dict) -> None:
@@ -238,6 +311,11 @@ def print_failed_cases(results: list[dict]) -> None:
         print(f"ID: {r.get('id')}")
         print(f"Category: {r.get('category')}")
         print(f"Expected behavior: {r.get('expected_behavior')}")
+        print(f"Actor role: {r.get('actor_role')}")
+        print(f"Target system: {r.get('target_system')}")
+        print(f"Sensitivity: {r.get('sensitivity')}")
+        print(f"Required permission: {r.get('required_permission')}")
+        print(f"Permission context: {json.dumps(r.get('permission_context', {}), indent=2)}")
         print(f"Pass/fail: {r.get('pass_fail')}")
         print(f"Violated rules: {r.get('violated_rules')}")
         print(f"Severity score: {r.get('severity_score')}")

@@ -1,146 +1,246 @@
-# Dataset Design
 
-## Overview
+Dataset Design
 
-ThreatAtlas uses a corpus-first evaluation design for testing LLM, RAG, and agent-based systems against adversarial prompt behaviors.
+Overview
 
-The dataset layer is designed to support:
+ThreatAtlas uses a corpus-first evaluation design for testing LLM, RAG, and agent-based systems against adversarial prompt behavior.
 
-- structured attack-category coverage
-- normalization across heterogeneous public sources
-- deduplication of near-identical prompts
-- balanced final evaluation sets
-- explicit tracking of synthetic backfills for sparse categories
+The dataset is not just a collection of prompts — it is a security evaluation layer that encodes:
+	•	attack behavior
+	•	actor identity
+	•	system target
+	•	data sensitivity
+	•	authorization context
 
-The goal is not just to collect prompts, but to build a **repeatable, normalized evaluation corpus** that can be used for security testing and regression analysis.
+This enables evaluation of both:
+	•	model safety behavior (refusal, compliance, leakage)
+	•	authorization policy behavior (who should be allowed to do what)
 
----
+⸻
 
-## Design Goals
+Design Goals
 
-The attack corpus is designed around the following goals:
+1. Shared schema across sources
 
-### 1. Shared schema across sources
-Public datasets use different column names, label systems, and attack taxonomies. ThreatAtlas normalizes all source rows into one common schema so downstream evaluation logic does not need source-specific handling.
+Public datasets vary widely in structure and labeling. All rows are normalized into a single schema so downstream evaluation logic is consistent and source-agnostic.
 
-### 2. Category-based evaluation
-Rows are mapped into a fixed internal taxonomy so evaluations can be grouped by security-relevant behavior rather than raw dataset origin.
+2. Security-first representation
 
-### 3. Global prompt deduplication
-Since many public datasets contain repeated or lightly modified prompts, ThreatAtlas applies global deduplication to reduce inflated category counts and improve corpus quality.
+Each row encodes not just what is being asked, but:
+	•	who is asking (actor_role)
+	•	what system is targeted (target_system)
+	•	what data is at risk (sensitivity)
+	•	whether the action should be allowed (permission_context)
 
-### 4. Controlled balancing
-The final corpus is downsampled or backfilled toward target counts per category so the evaluation set is not dominated by whichever source happens to be largest.
+This transforms the dataset into a security testing framework, not just a prompt collection.
 
-### 5. Explicit handling of sparsity
-Some attack categories are underrepresented in public datasets. ThreatAtlas handles this by using synthetic backfills when real data is insufficient, while preserving source metadata so synthetic coverage remains visible.
+3. Category-based evaluation
 
----
+Rows are mapped into a fixed internal taxonomy so evaluations reflect attack behavior, not dataset origin.
 
-## Canonical Attack Taxonomy
+4. Global prompt deduplication
 
-ThreatAtlas currently uses the following internal categories:
+Prompts are deduplicated across all sources to prevent inflated counts and improve evaluation quality.
 
-- `prompt_injection`
-- `jailbreak`
-- `instruction_override`
-- `sensitive_data_request`
-- `policy_evasion`
-- `tool_misuse`
-- `benign_control`
+5. Controlled balancing
 
-These categories are intended to support practical adversarial evaluation of LLM systems rather than perfectly mirror any single public dataset taxonomy.
+Each category is downsampled or backfilled to target sizes to ensure balanced evaluation coverage.
+
+6. Explicit handling of sparsity
+
+Synthetic backfills are used for underrepresented categories, with clear labeling to preserve transparency.
+
+⸻
+
+Canonical Attack Taxonomy
+
+ThreatAtlas uses the following internal categories:
+	•	prompt_injection
+	•	jailbreak
+	•	instruction_override
+	•	sensitive_data_request
+	•	policy_evasion
+	•	tool_misuse
+	•	benign_control
+
+These categories are designed for practical adversarial testing, not strict alignment with any single dataset taxonomy.
+
+⸻
+
+Category Target Counts
+
+{
+  "prompt_injection": 12000,
+  "jailbreak": 12000,
+  "instruction_override": 8000,
+  "sensitive_data_request": 8000,
+  "policy_evasion": 5000,
+  "tool_misuse": 5000,
+  "benign_control": 10000
+}
 
 
+⸻
 
-### Category Target Counts
+Category Definitions
 
-- "prompt_injection": 12000,
-- "jailbreak": 12000,
-- "instruction_override": 8000,
-- "sensitive_data_request": 8000,
-- "policy_evasion": 5000,
-- "tool_misuse": 5000,
-- "benign_control": 10000,
+prompt_injection
+Attempts to override system instructions or manipulate model behavior.
 
+jailbreak
+Attempts to bypass safety constraints or refusal mechanisms.
 
-### Category definitions
+instruction_override
+Explicit attempts to replace higher-priority instructions (e.g. system prompts).
 
-#### `prompt_injection`
-Prompts that attempt to override system behavior, redirect the model, or manipulate instruction-following logic.
+sensitive_data_request
+Attempts to extract secrets, hidden prompts, credentials, or protected data.
 
-#### `jailbreak`
-Prompts designed to bypass safety constraints or refusal behavior.
+policy_evasion
+Uses encoding, obfuscation, or transformation to bypass safeguards.
 
-#### `instruction_override`
-Prompts that explicitly attempt to replace higher-priority instructions with new ones.
+tool_misuse
+Attempts to trigger unsafe tool execution or access restricted systems.
 
-#### `sensitive_data_request`
-Prompts intended to elicit hidden instructions, secrets, system prompts, credentials, or other protected information.
+benign_control
+Non-adversarial prompts used to measure baseline behavior and over-refusal.
 
-#### `policy_evasion`
-Prompts that use encoding, obfuscation, transformation, or disguise to bypass policy checks.
+⸻
 
-#### `tool_misuse`
-Prompts that attempt to induce unsafe tool use, shell execution, secret extraction, or unauthorized actions in tool-enabled systems.
+Source Datasets
 
-#### `benign_control`
-Non-adversarial prompts included to measure utility, over-refusal, and baseline behavior.
+The corpus is built from multiple Hugging Face datasets:
+	•	neuralchemy/Prompt-injection-dataset
+	•	wambosec/prompt-injections
+	•	gabrielchua/system-prompt-leakage
+	•	Antijection/prompt-injection-dataset-v1
 
----
-
-## Source Datasets
-
-ThreatAtlas builds the corpus from multiple Hugging Face datasets.
-
-Current sources include:
-
-- `neuralchemy/Prompt-injection-dataset`
-- `wambosec/prompt-injections`
-- `gabrielchua/system-prompt-leakage`
-- `Antijection/prompt-injection-dataset-v1`
-
-Optional sources supported in the build pipeline include:
-
-- `allenai/wildjailbreak`
-- `Mindgard/evaded-prompt-injection-and-jailbreak-samples`
+Optional sources:
+	•	allenai/wildjailbreak
+	•	Mindgard/evaded-prompt-injection-and-jailbreak-samples
 
 Each source is mapped into the internal taxonomy using source-specific heuristics.
 
----
+⸻
 
-## Normalization Strategy
+Normalization Strategy
 
-Each source row is converted into a shared schema through a dedicated mapper function.
+Each row is transformed into a unified schema via mapper functions.
 
 Normalization includes:
+	•	text cleaning
+	•	category mapping
+	•	benign/malicious classification
+	•	tag normalization
+	•	metadata preservation
+	•	expected behavior assignment
+	•	identity + permission modeling
 
-- text cleaning
-- category mapping
-- benign/malicious classification
-- severity assignment
-- tag cleanup
-- metadata preservation
-- expected behavior assignment
+⸻
 
-### Output schema
+Security-Aware Schema
 
 Each normalized row follows this structure:
 
-```json
 {
   "id": "...",
-  "category": "...",
-  "severity": "...",
   "prompt": "...",
+
+  "category": "...",
   "expected_behavior": "...",
+
+  "actor_role": "user | admin | system",
+  "target_system": "llm | rag | agent",
+  "sensitivity": "low | internal | confidential",
+
+  "required_permission": "...",
+  "permission_context": {
+    "is_authorized": true,
+    "allowed_tools": ["..."]
+  },
+
   "tags": [...],
+
   "source_dataset": "...",
   "source_split": "...",
   "original_category": "...",
+
   "is_benign": false,
   "metadata": {...}
 }
-```
 
-Validation checks ensure required fields (`prompt`, `category`) are present, categories align to the internal taxonomy, and synthetic backfills remain labeled for transparency.
+
+⸻
+
+Identity & Permission Modeling
+
+ThreatAtlas introduces a lightweight IAM simulation layer:
+
+Roles
+
+Define what actions an actor is allowed to take.
+
+Example:
+
+roles:
+  user:
+    allowed_tools: ["search"]
+  admin:
+    allowed_tools: ["search", "crm_read"]
+
+Permissions
+
+Define the sensitivity of protected operations.
+
+permissions:
+  crm_read:
+    sensitivity: "confidential"
+
+Purpose
+
+This enables evaluation of:
+	•	unauthorized access attempts
+	•	privilege escalation
+	•	system impersonation
+	•	agent/tool abuse
+
+⸻
+
+Evaluation Implications
+
+With this schema, each row supports:
+
+1. Safety Evaluation
+	•	Did the model refuse when it should?
+	•	Did it leak sensitive information?
+
+2. Authorization Evaluation
+	•	Should this actor be allowed to perform this action?
+	•	Did the system enforce permission boundaries?
+
+3. System-Level Testing
+	•	Is the attack targeting LLM, RAG, or agent layers?
+	•	Where do failures occur?
+
+⸻
+
+Validation
+
+Validation ensures:
+	•	required fields (prompt, category) exist
+	•	categories match taxonomy
+	•	identity and permission fields are populated
+	•	synthetic rows are clearly labeled
+
+⸻
+
+Key Insight
+
+ThreatAtlas is not just a dataset.
+
+It is a security evaluation substrate that enables:
+	•	model safety testing
+	•	authorization testing
+	•	system-level failure analysis
+
+in a single, unified corpus.
