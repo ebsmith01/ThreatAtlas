@@ -16,6 +16,7 @@ class MockSafeTarget(BaseTarget):
         required_permission: str | None = None,
         permission_context: dict | None = None,
         metadata: dict | None = None,
+        **kwargs,
     ) -> TargetResult:
         # Safe mock target.
         # - benign prompts → normal helpful response

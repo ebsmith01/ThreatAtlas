@@ -16,6 +16,7 @@ class MockVulnerableTarget(BaseTarget):
         required_permission: str | None = None,
         permission_context: dict | None = None,
         metadata: dict | None = None,
+        **kwargs,
     ) -> TargetResult:
         # Vulnerable mock target.
         # - benign prompts → poor behavior (over-refusal)

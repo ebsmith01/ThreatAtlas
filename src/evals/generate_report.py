@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import argparse
-import json
-import time
-from collections import defaultdict
+import argparse, json, time
+from collections import defaultdict, Counter
 from pathlib import Path
 
 from data.loaders import load_attack_corpus
@@ -16,424 +14,220 @@ from targets.mock_safe_target import MockSafeTarget
 from targets.mock_target import MockSmokeTarget
 from targets.mock_vulnerable_target import MockVulnerableTarget
 
+# ------------------------------------------------------------
+# QUICK GUIDE
+# ------------------------------------------------------------
+# pass_rate → how safe the system is
+# authorization_failure_rate → IAM failure (critical)
+# rag_data_leak_rate → RAG leaking sensitive data
+# agent_tool_abuse_rate → agent misusing tools
+# coverage → tells you if dataset is balanced
+# ------------------------------------------------------------
 
-# Default paths for reading the attack dataset and writing evaluation reports.
 ATTACK_CORPUS_PATH = Path("data/attacks/final/attack_corpus.jsonl")
 REPORTS_DIR = Path("outputs")
 
+# ------------------ TARGET ------------------
+def get_target(name, model=None, provider=None, base_url=None, api_key_env=None):
+    if name == "smoke": return MockSmokeTarget()
+    if name == "safe": return MockSafeTarget()
+    if name == "vulnerable": return MockVulnerableTarget()
+    if name == "llm":
+        return LLMTarget(provider=provider or "openai", model=model or "gpt-4.1", base_url=base_url, api_key_env=api_key_env)
+    raise ValueError(f"Unknown target: {name}")
 
-def get_target(
-    target_name: str,
-    model_name: str | None = None,
-    provider: str | None = None,
-    base_url: str | None = None,
-    api_key_env: str | None = None,
-):
-    # Instantiate the correct target implementation based on the CLI flag.
-    if target_name == "smoke":
-        return MockSmokeTarget()
-    if target_name == "safe":
-        return MockSafeTarget()
-    if target_name == "vulnerable":
-        return MockVulnerableTarget()
-    if target_name == "llm":
-        return LLMTarget(
-            provider=provider or "openai",
-            model=model_name or "gpt-4.1",
-            base_url=base_url,
-            api_key_env=api_key_env,
-        )
-    raise ValueError(f"Unknown target: {target_name}")
+# ------------------ SUMMARY ------------------
+def summarize(results):
+    bucket = lambda: {"total":0,"pass":0,"fail":0,"unauth":0,"auth_fail":0}
+    by_cat, by_role, by_sys, by_sens = map(lambda _: defaultdict(bucket), range(4))
 
+    total=passed=failed=unauth=auth_fail=0
+    rag_total=rag_leak=agent_total=agent_abuse=0
+    llm_total=llm_failures=0
 
-def summarize_results(results: list[dict]) -> dict:
-    # Aggregate pass/fail stats overall, per category, and across schema slices.
-    by_category: dict[str, dict] = defaultdict(lambda: {"total": 0, "pass": 0, "fail": 0})
-    by_actor_role: dict[str, dict] = defaultdict(lambda: {"total": 0, "pass": 0, "fail": 0})
-    by_target_system: dict[str, dict] = defaultdict(lambda: {"total": 0, "pass": 0, "fail": 0})
-    by_sensitivity: dict[str, dict] = defaultdict(lambda: {"total": 0, "pass": 0, "fail": 0})
+    for r in results:
+        pf = r["pass_fail"]
+        sens = r.get("sensitivity")
+        sys = r.get("target_system")
 
+        is_unauth = r.get("permission_context",{}).get("is_authorized") is False
+        is_auth_fail = is_unauth and "authorization_policy_enforcement" in r.get("violated_rules",[])
+
+        for b,k in [(by_cat,r.get("category")),(by_role,r.get("actor_role")),(by_sys,sys),(by_sens,sens)]:
+            if k:
+                b[k]["total"]+=1; b[k][pf]+=1
+                if is_unauth: b[k]["unauth"]+=1
+                if is_auth_fail: b[k]["auth_fail"]+=1
+
+        if pf=="pass": passed+=1
+        else: failed+=1
+
+        if is_unauth: unauth+=1
+        if is_auth_fail: auth_fail+=1
+
+        # NEW METRICS
+        if sys=="rag":
+            rag_total+=1
+            if pf=="fail" and sens in {"internal","confidential"}: rag_leak+=1
+        if sys=="agent":
+            agent_total+=1
+            if pf=="fail": agent_abuse+=1
+        if sys=="llm":
+            llm_total += 1
+            if pf == "fail": llm_failures += 1
+
+    def fmt(b):
+        return {k:{
+            **v,
+            "pass_rate": round(v["pass"]/v["total"]*100,2) if v["total"] else 0
+        } for k,v in b.items()}
+
+    # compute total once (avoid walrus operator for compatibility)
     total = len(results)
-    passed = 0
-    failed = 0
-    unauthorized_cases = 0
-    authorization_failures = 0
-
-    def update_bucket(bucket: dict[str, dict], key: str | None, pass_fail: str) -> None:
-        if not key:
-            return
-        bucket[key]["total"] += 1
-        bucket[key][pass_fail] += 1
-
-    for result in results:
-        category = result.get("category", "unknown")
-        pass_fail = result.get("pass_fail", "fail")
-
-        by_category[category]["total"] += 1
-        by_category[category][pass_fail] += 1
-
-        update_bucket(by_actor_role, result.get("actor_role"), pass_fail)
-        update_bucket(by_target_system, result.get("target_system"), pass_fail)
-        update_bucket(by_sensitivity, result.get("sensitivity"), pass_fail)
-
-        if result.get("permission_context", {}).get("is_authorized") is False:
-            unauthorized_cases += 1
-            if "authorization_policy_enforcement" in result.get("violated_rules", []):
-                authorization_failures += 1
-
-        if pass_fail == "pass":
-            passed += 1
-        else:
-            failed += 1
-
-    def format_bucket(bucket: dict[str, dict]) -> dict:
-        metrics = {}
-        for key, counts in bucket.items():
-            total_key = counts["total"]
-            pass_rate = (counts["pass"] / total_key * 100.0) if total_key else 0.0
-            metrics[key] = {
-                "total": total_key,
-                "pass": counts["pass"],
-                "fail": counts["fail"],
-                "pass_rate": round(pass_rate, 2),
-            }
-        return metrics
-
-    overall_pass_rate = (passed / total * 100.0) if total else 0.0
-    authorization_failure_rate = (
-        authorization_failures / unauthorized_cases * 100.0
-    ) if unauthorized_cases else 0.0
 
     return {
-        "overall": {
+        "overall":{
             "total": total,
-            "pass": passed,
-            "fail": failed,
-            "pass_rate": round(overall_pass_rate, 2),
-            "unauthorized_cases": unauthorized_cases,
-            "authorization_failures": authorization_failures,
-            "authorization_failure_rate": round(authorization_failure_rate, 2),
+            "pass":passed,
+            "fail":failed,
+            "pass_rate":round(passed/total*100,2) if total else 0,
+            "unauthorized_cases":unauth,
+            "authorization_failures":auth_fail,
+            "authorization_failure_rate":round(auth_fail/unauth*100,2) if unauth else 0,
+            "rag_data_leak_rate":round(rag_leak/rag_total*100,2) if rag_total else 0,
+            "agent_tool_abuse_rate":round(agent_abuse/agent_total*100,2) if agent_total else 0,
+            "llm_failure_rate": round(llm_failures/llm_total*100,2) if llm_total else 0,
         },
-        "by_category": format_bucket(by_category),
-        "by_actor_role": format_bucket(by_actor_role),
-        "by_target_system": format_bucket(by_target_system),
-        "by_sensitivity": format_bucket(by_sensitivity),
+        "system_risk": {
+            "rag_data_leak_rate": round(rag_leak/rag_total*100,2) if rag_total else 0,
+            "agent_tool_abuse_rate": round(agent_abuse/agent_total*100,2) if agent_total else 0,
+            "llm_failure_rate": round(llm_failures/llm_total*100,2) if llm_total else 0
+        },
+        "by_category":fmt(by_cat),
+        "by_actor_role":fmt(by_role),
+        "by_target_system":fmt(by_sys),
+        "by_sensitivity":fmt(by_sens)
     }
 
-
-def run_local_eval(
-    sample_size: int,
-    target_name: str,
-    model_name: str | None = None,
-    provider: str | None = None,
-    base_url: str | None = None,
-    api_key_env: str | None = None,
-) -> dict:
-    # Trim the corpus to the requested sample size and pick a target to evaluate against.
-    attacks = load_attack_corpus(ATTACK_CORPUS_PATH)[:sample_size]
-    target = get_target(
-        target_name=target_name,
-        model_name=model_name,
-        provider=provider,
-        base_url=base_url,
-        api_key_env=api_key_env,
-    )
-
-    results: list[dict] = []
-
-    for attack in attacks:
-        # Extract attack data and capture latency for the target call.
-        prompt = attack["prompt"]
-        category = attack["category"]
-        expected_behavior = attack.get("expected_behavior")
-        metadata = attack.get("metadata", {})
-
-        actor_role = attack.get("actor_role")
-        target_system = attack.get("target_system")
-        sensitivity = attack.get("sensitivity")
-        required_permission = attack.get("required_permission")
-        permission_context = attack.get("permission_context", {})
-
-        start = time.perf_counter()
-        target_result = target.run(
-            prompt,
-            category=category,
-            actor_role=actor_role,
-            target_system=target_system,
-            sensitivity=sensitivity,
-            required_permission=required_permission,
-            permission_context=permission_context,
-            metadata=metadata,
-        )
-        latency_ms = (time.perf_counter() - start) * 1000.0
-
-        response_text = getattr(target_result, "response_text", "")
-        token_usage = getattr(target_result, "token_usage", None)
-
-        # Run guardrail checks and rule-based evaluation on the model response.
-        guardrail_result = run_guardrail_checks(
-            response_text=response_text,
-            category=category,
-            permission_context=permission_context,
-            sensitivity=sensitivity,
-            required_permission=required_permission,
-        )
-
-        eval_pass_fail, eval_violated_rules = evaluate_response(
-            response_text=response_text,
-            category=category,
-            expected_behavior=expected_behavior,
-            actor_role=actor_role,
-            target_system=target_system,
-            sensitivity=sensitivity,
-            required_permission=required_permission,
-            permission_context=permission_context,
-        )
-
-        # Merge violations from evaluator and guardrails to decide the final verdict.
-        combined_violated_rules = sorted(
-            set(eval_violated_rules)
-            | {v.get("category", v.get("rule_id")) for v in guardrail_result.get("violations", [])}
-        )
-
-        final_pass_fail = "fail" if combined_violated_rules else eval_pass_fail
-
-        # Persist all relevant data for later reporting and debugging.
-        result = {
-            "id": attack.get("id"),
-            "prompt": prompt,
-            "category": category,
-            "expected_behavior": expected_behavior,
-            "actor_role": actor_role,
-            "target_system": target_system,
-            "sensitivity": sensitivity,
-            "required_permission": required_permission,
-            "permission_context": permission_context,
-            "response_text": response_text,
-            "pass_fail": final_pass_fail,
-            "violated_rules": combined_violated_rules,
-            "guardrail_violations": guardrail_result.get("violations", []),
-            "guardrail_pass_fail": guardrail_result.get("pass_fail"),
-            "latency_ms": round(latency_ms, 2),
-            "token_usage": token_usage,
-            "metadata": metadata,
+# ------------------ COVERAGE ------------------
+def coverage(results):
+    c = lambda k: Counter(r.get(k) for r in results)
+    return {
+        "category":dict(c("category")),
+        "role":dict(c("actor_role")),
+        "system":dict(c("target_system")),
+        "sensitivity":dict(c("sensitivity")),
+        "auth":{
+            "authorized":sum(r.get("permission_context",{}).get("is_authorized") is True for r in results),
+            "unauthorized":sum(r.get("permission_context",{}).get("is_authorized") is False for r in results)
         }
-
-        # Phase 12 — add per-response severity fields.
-        result.update(score_response(result))
-
-        results.append(result)
-
-    summary = summarize_results(results)
-
-    # Phase 12 — aggregate risk scoring.
-    risk_summary = score_report(results, profile="balanced")
-
-    # Bundle metadata, summary metrics, and per-case results into a report payload.
-    report = {
-        "report_type": "local_eval",
-        "target_name": target_name,
-        "provider": provider,
-        "model_name": model_name,
-        "base_url": base_url,
-        "api_key_env": api_key_env,
-        "corpus_path": str(ATTACK_CORPUS_PATH),
-        "sample_size": len(attacks),
-        "summary": summary,
-        "risk_summary": risk_summary,
-        "results": results,
     }
 
-    return report
+# ------------------ EVAL ------------------
+def run_eval(n, target_name, system=None, **kwargs):
+    attacks = load_attack_corpus(ATTACK_CORPUS_PATH)
 
+    # optional system filter (llm / rag / agent)
+    if system:
+        attacks = [a for a in attacks if a.get("target_system") == system]
 
-def print_summary(summary: dict, target_name: str, provider: str | None, model_name: str | None) -> None:
-    # Print top-line metrics to the console for quick inspection.
-    overall = summary["overall"]
+    attacks = attacks[:n]
+    target = get_target(target_name, **kwargs)
 
-    target_label = target_name
-    if target_name == "llm":
-        target_label = f"{target_name} | provider={provider} | model={model_name}"
+    results=[]
 
-    print(f"\n=== Local Eval Summary ({target_label}) ===")
-    print(f"Total: {overall['total']}")
-    print(f"Pass:  {overall['pass']}")
-    print(f"Fail:  {overall['fail']}")
-    print(f"Pass rate: {overall['pass_rate']}%")
-    print(f"Unauthorized cases: {overall.get('unauthorized_cases', 0)}")
-    print(f"Authorization failures: {overall.get('authorization_failures', 0)}")
-    print(f"Authorization failure rate: {overall.get('authorization_failure_rate', 0.0)}%")
-
-    print("\n=== By Category ===")
-    for category, metrics in sorted(summary["by_category"].items()):
-        print(
-            f"{category}: total={metrics['total']} "
-            f"pass={metrics['pass']} fail={metrics['fail']} "
-            f"pass_rate={metrics['pass_rate']}%"
+    for a in attacks:
+        t0 = time.perf_counter()
+        out = target.run(
+            prompt=a.get("prompt"),
+            category=a.get("category"),
+            actor_role=a.get("actor_role"),
+            target_system=a.get("target_system"),
+            sensitivity=a.get("sensitivity"),
+            required_permission=a.get("required_permission"),
+            permission_context=a.get("permission_context"),
+            metadata=a.get("metadata"),
         )
+        latency = (time.perf_counter() - t0) * 1000
 
-    for slice_name in ["by_actor_role", "by_target_system", "by_sensitivity"]:
-        if slice_name not in summary:
+        guard = run_guardrail_checks(out.response_text, a["category"], a.get("permission_context"), a.get("sensitivity"), a.get("required_permission"))
+        pf, rules = evaluate_response(out.response_text, a["category"], a.get("expected_behavior"), a.get("actor_role"), a.get("target_system"), a.get("sensitivity"), a.get("required_permission"), a.get("permission_context"))
+
+        violations = sorted(set(rules) | {v.get("category",v.get("rule_id")) for v in guard.get("violations",[])})
+        final = "fail" if violations else pf
+
+        r = {**a,
+            "response_text":out.response_text,
+            "pass_fail":final,
+            "violated_rules":violations,
+            "latency_ms":round(latency,2)
+        }
+        r.update(score_response(r))
+        results.append(r)
+
+    return {
+        "summary": summarize(results),
+        "coverage": coverage(results),
+        "risk": score_report(results),
+        "results": results
+    }
+
+# ------------------ PRINT ------------------
+def print_report(r, target_name):
+    o=r["summary"]["overall"]
+    print("\n=== SUMMARY ===")
+    for k,v in o.items(): print(f"{k}: {v}")
+
+    print("\n=== SYSTEM RISK ===")
+    for k,v in r["summary"].get("system_risk", {}).items():
+        print(f"{k}: {v}%")
+
+    print("\n=== SYSTEM BREAKDOWN ===")
+    by_sys = r["summary"].get("by_target_system", {})
+
+    # only show system relevant to target
+    target_map = {
+        "llm": "llm",
+        "safe": None,
+        "vulnerable": None,
+        "smoke": None
+    }
+
+    selected_system = target_map.get(target_name)
+
+    for sys, m in by_sys.items():
+        if selected_system and sys != selected_system:
             continue
 
-        print(f"\n=== {slice_name.replace('_', ' ').title()} ===")
-        for key, metrics in sorted(summary[slice_name].items()):
-            print(
-                f"{key}: total={metrics['total']} "
-                f"pass={metrics['pass']} fail={metrics['fail']} "
-                f"pass_rate={metrics['pass_rate']}%"
-            )
+        print(f"\n[{sys.upper()}]")
+        print(f"  total: {m.get('total')}")
+        print(f"  pass_rate: {m.get('pass_rate')}%")
+        print(f"  fail: {m.get('fail')}")
+        print(f"  unauthorized: {m.get('unauth')}")
+        print(f"  auth_failures: {m.get('auth_fail')}")
 
+    print("\n=== COVERAGE ===")
+    for k,v in r["coverage"].items(): print(k, v)
 
-def print_risk_summary(risk: dict) -> None:
-    print("\n=== Risk Summary ===")
-    print(f"Risk score: {risk['risk_score']}")
-    print(f"Risk level: {risk['risk_level']}")
-    print(f"Critical failures: {risk['critical_failures']}")
-    print(f"Average severity: {risk['average_severity']}")
+    print("\n=== RISK ===", r["risk"]["risk_score"])
 
-    print("\n=== Risk By Category ===")
-    for category, score in sorted(risk["risk_by_category"].items()):
-        print(f"{category}: {score}")
+# ------------------ CLI ------------------
+def main():
+    p=argparse.ArgumentParser()
+    p.add_argument("--target", default="smoke")
+    p.add_argument("--model", default="gpt-4.1")
+    p.add_argument("--provider", default="openai")
+    p.add_argument("--sample", type=int, default=25)
+    p.add_argument("--system", choices=["llm","rag","agent"], default=None)
+    args=p.parse_args()
 
+    report = run_eval(args.sample, args.target, system=args.system, model=args.model, provider=args.provider)
+    print_report(report, args.target)
 
-def print_failed_cases(results: list[dict]) -> None:
-    # Emit detailed info for any failed prompts to aid debugging.
-    failed_results = [r for r in results if r.get("pass_fail") == "fail"]
-
-    print("\n=== Failed Cases ===")
-    if not failed_results:
-        print("None")
-        return
-
-    for i, r in enumerate(failed_results, start=1):
-        print(f"\n--- Failure {i} ---")
-        print(f"ID: {r.get('id')}")
-        print(f"Category: {r.get('category')}")
-        print(f"Expected behavior: {r.get('expected_behavior')}")
-        print(f"Actor role: {r.get('actor_role')}")
-        print(f"Target system: {r.get('target_system')}")
-        print(f"Sensitivity: {r.get('sensitivity')}")
-        print(f"Required permission: {r.get('required_permission')}")
-        print(f"Permission context: {json.dumps(r.get('permission_context', {}), indent=2)}")
-        print(f"Pass/fail: {r.get('pass_fail')}")
-        print(f"Violated rules: {r.get('violated_rules')}")
-        print(f"Severity score: {r.get('severity_score')}")
-        print(f"Leakage score: {r.get('leakage_score')}")
-        print(f"Compliance score: {r.get('compliance_score')}")
-        print(f"Guardrail pass/fail: {r.get('guardrail_pass_fail')}")
-        print(f"Guardrail violations: {r.get('guardrail_violations')}")
-        print(f"Latency (ms): {r.get('latency_ms')}")
-        print(f"Token usage: {r.get('token_usage')}")
-        print("\nPrompt:")
-        print(r.get("prompt"))
-        print("\nResponse:")
-        print(r.get("response_text"))
-        print("\nMetadata:")
-        print(json.dumps(r.get("metadata", {}), indent=2))
-
-
-def save_report(report: dict, output_path: Path) -> None:
-    # Ensure destination exists and write the JSON report.
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w", encoding="utf-8") as f:
-        json.dump(report, f, indent=2)
-
-
-def build_output_path(
-    target_name: str,
-    provider: str | None,
-    model_name: str | None,
-) -> Path:
-    # Generate a readable file name keyed by target/provider/model to avoid collisions.
-    if target_name == "smoke":
-        filename = "mock_smoke_report.json"
-    elif target_name == "safe":
-        filename = "mock_safe_report.json"
-    elif target_name == "vulnerable":
-        filename = "mock_vulnerable_report.json"
-    elif target_name == "llm":
-        safe_provider = (provider or "unknown_provider").replace("/", "_")
-        safe_model = (model_name or "unknown_model").replace("/", "_")
-        filename = f"llm_{safe_provider}_{safe_model}_report.json"
-    else:
-        raise ValueError(f"Unknown target for output path: {target_name}")
-
-    return REPORTS_DIR / filename
-
-
-def main() -> None:
-    # Parse CLI args, run the evaluation loop, display results, and persist the report.
-    parser = argparse.ArgumentParser(description="Run a local ThreatAtlas evaluation")
-
-    parser.add_argument(
-        "--target",
-        choices=["smoke", "safe", "vulnerable", "llm"],
-        default="smoke",
-        help="Evaluation target type",
-    )
-    parser.add_argument(
-        "--provider",
-        default="openai",
-        help="Provider for --target llm (e.g. openai, openai_compatible)",
-    )
-    parser.add_argument(
-        "--model",
-        default="gpt-4.1",
-        help="Model name for --target llm",
-    )
-    parser.add_argument(
-        "--base-url",
-        default=None,
-        help="Optional base URL for openai-compatible endpoints",
-    )
-    parser.add_argument(
-        "--api-key-env",
-        default=None,
-        help="Optional environment variable name for API key",
-    )
-    parser.add_argument(
-        "--sample",
-        type=int,
-        default=25,
-        help="Number of attack rows to evaluate",
-    )
-
-    args = parser.parse_args()
-
-    provider = args.provider if args.target == "llm" else None
-    model_name = args.model if args.target == "llm" else None
-    base_url = args.base_url if args.target == "llm" else None
-    api_key_env = args.api_key_env if args.target == "llm" else None
-
-    report = run_local_eval(
-        sample_size=args.sample,
-        target_name=args.target,
-        model_name=model_name,
-        provider=provider,
-        base_url=base_url,
-        api_key_env=api_key_env,
-    )
-
-    output_path = build_output_path(
-        target_name=args.target,
-        provider=provider,
-        model_name=model_name,
-    )
-
-    print_summary(
-        report["summary"],
-        target_name=args.target,
-        provider=provider,
-        model_name=model_name,
-    )
-    print_risk_summary(report["risk_summary"])
-    print_failed_cases(report["results"])
-    save_report(report, output_path)
-
-    print(f"\nSaved report to: {output_path}")
-
+    REPORTS_DIR.mkdir(exist_ok=True)
+    path = REPORTS_DIR / f"{args.target}_report.json"
+    json.dump(report, open(path,"w"), indent=2)
+    print("\nSaved:", path)
 
 if __name__ == "__main__":
     main()
-    
