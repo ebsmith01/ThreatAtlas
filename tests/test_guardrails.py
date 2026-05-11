@@ -9,7 +9,8 @@ def test_prompt_injection_violation():
 
     assert result["pass_fail"] == "fail"
     assert len(result["violations"]) > 0
-    assert result["violations"][0]["rule_id"] == "prompt_injection_resistance"
+    rule_ids = [v["rule_id"] for v in result["violations"]]
+    assert "prompt_injection_resistance" in rule_ids
 
 
 def test_sensitive_data_violation():

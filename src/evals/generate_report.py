@@ -8,6 +8,7 @@ from data.loaders import load_attack_corpus
 from evals.rule_evaluator import evaluate_response
 from evals.risk import score_report
 from evals.severity import score_response
+from evals.telemetry_metrics import compute_telemetry_metrics
 from guardrails.filters import run_guardrail_checks
 from targets.llm_target import LLMTarget
 from targets.mock_safe_target import MockSafeTarget
@@ -156,20 +157,43 @@ def run_eval(n, target_name, system=None, **kwargs):
         violations = sorted(set(rules) | {v.get("category",v.get("rule_id")) for v in guard.get("violations",[])})
         final = "fail" if violations else pf
 
-        r = {**a,
-            "response_text":out.response_text,
-            "pass_fail":final,
-            "violated_rules":violations,
-            "latency_ms":round(latency,2)
+        r = {
+            **a,
+            "response_text": out.response_text,
+            "pass_fail": final,
+            "violated_rules": violations,
+            "latency_ms": round(latency, 2),
+
+            # Runtime execution telemetry.
+            "telemetry": getattr(out, "raw_response", None),
         }
         r.update(score_response(r))
         results.append(r)
+
+    # Aggregate runtime telemetry metrics.
+    telemetry_events = [
+        {
+            **(r.get("telemetry") or {}),
+            "target_system": r.get("target_system"),
+            "violated_rules": r.get("violated_rules", []),
+        }
+        for r in results
+        if r.get("telemetry")
+    ]
+
+    telemetry_metrics = compute_telemetry_metrics(
+        telemetry_events
+    )
 
     return {
         "summary": summarize(results),
         "coverage": coverage(results),
         "risk": score_report(results),
-        "results": results
+
+        # Runtime observability metrics.
+        "telemetry_metrics": telemetry_metrics,
+
+        "results": results,
     }
 
 # ------------------ PRINT ------------------
@@ -210,6 +234,13 @@ def print_report(r, target_name):
     for k,v in r["coverage"].items(): print(k, v)
 
     print("\n=== RISK ===", r["risk"]["risk_score"])
+
+    print("\n=== TELEMETRY ===")
+
+    telemetry = r.get("telemetry_metrics", {})
+
+    for k, v in telemetry.items():
+        print(f"{k}: {v}")
 
 # ------------------ CLI ------------------
 def main():
