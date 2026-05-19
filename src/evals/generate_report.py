@@ -9,11 +9,13 @@ from evals.rule_evaluator import evaluate_response
 from evals.risk import score_report
 from evals.severity import score_response
 from evals.telemetry_metrics import compute_telemetry_metrics
+from evals.retrieval_evaluator import evaluate_retrieval_security
 from guardrails.filters import run_guardrail_checks
 from targets.llm_target import LLMTarget
 from targets.mock_safe_target import MockSafeTarget
 from targets.mock_target import MockSmokeTarget
 from targets.mock_vulnerable_target import MockVulnerableTarget
+from targets.mock_rag_target import MockRAGTarget
 
 # ------------------------------------------------------------
 # QUICK GUIDE
@@ -29,12 +31,59 @@ ATTACK_CORPUS_PATH = Path("data/attacks/final/attack_corpus.jsonl")
 REPORTS_DIR = Path("outputs")
 
 # ------------------ TARGET ------------------
-def get_target(name, model=None, provider=None, base_url=None, api_key_env=None):
-    if name == "smoke": return MockSmokeTarget()
-    if name == "safe": return MockSafeTarget()
-    if name == "vulnerable": return MockVulnerableTarget()
+def get_target(
+    name,
+    model=None,
+    provider=None,
+    base_url=None,
+    api_key_env=None,
+):
+
+    # --------------------------------------------------
+    # Simple smoke target.
+    # --------------------------------------------------
+    if name == "smoke":
+        return MockSmokeTarget()
+
+    # --------------------------------------------------
+    # Safe non-agent target.
+    # --------------------------------------------------
+    if name == "safe":
+        return MockSafeTarget()
+
+    # --------------------------------------------------
+    # Intentionally vulnerable target.
+    # --------------------------------------------------
+    if name == "vulnerable":
+        return MockVulnerableTarget()
+
+    # --------------------------------------------------
+    # Safe RAG target.
+    # --------------------------------------------------
+    if name == "rag_safe":
+        return MockRAGTarget(
+            vulnerable=False,
+        )
+
+    # --------------------------------------------------
+    # Vulnerable RAG target.
+    # --------------------------------------------------
+    if name == "rag_vulnerable":
+        return MockRAGTarget(
+            vulnerable=True,
+        )
+
+    # --------------------------------------------------
+    # Real LLM target.
+    # --------------------------------------------------
     if name == "llm":
-        return LLMTarget(provider=provider or "openai", model=model or "gpt-4.1", base_url=base_url, api_key_env=api_key_env)
+        return LLMTarget(
+            provider=provider or "openai",
+            model=model or "gpt-4.1",
+            base_url=base_url,
+            api_key_env=api_key_env,
+        )
+
     raise ValueError(f"Unknown target: {name}")
 
 # ------------------ SUMMARY ------------------
@@ -151,21 +200,99 @@ def run_eval(n, target_name, system=None, **kwargs):
         )
         latency = (time.perf_counter() - t0) * 1000
 
-        guard = run_guardrail_checks(out.response_text, a["category"], a.get("permission_context"), a.get("sensitivity"), a.get("required_permission"))
-        pf, rules = evaluate_response(out.response_text, a["category"], a.get("expected_behavior"), a.get("actor_role"), a.get("target_system"), a.get("sensitivity"), a.get("required_permission"), a.get("permission_context"))
+        # --------------------------------------------------
+        # Guardrail evaluation
+        # --------------------------------------------------
 
-        violations = sorted(set(rules) | {v.get("category",v.get("rule_id")) for v in guard.get("violations",[])})
+        guard = run_guardrail_checks(
+            out.response_text,
+            a["category"],
+            a.get("permission_context"),
+            a.get("sensitivity"),
+            a.get("required_permission"),
+        )
+
+        # --------------------------------------------------
+        # Response evaluation
+        # --------------------------------------------------
+
+        pf, rules = evaluate_response(
+            out.response_text,
+            a["category"],
+            a.get("expected_behavior"),
+            a.get("actor_role"),
+            a.get("target_system"),
+            a.get("sensitivity"),
+            a.get("required_permission"),
+            a.get("permission_context"),
+        )
+
+        # --------------------------------------------------
+        # Retrieval security evaluation
+        # --------------------------------------------------
+        # Evaluates:
+        # - unauthorized retrieval
+        # - sensitive document exposure
+        # - retrieval permission bypass
+        # --------------------------------------------------
+
+        retrieval_eval = evaluate_retrieval_security(
+            telemetry=getattr(out, "raw_response", None),
+            sensitivity=a.get("sensitivity"),
+            actor_role=a.get("actor_role"),
+        )
+
+        # --------------------------------------------------
+        # Merge all violations
+        # --------------------------------------------------
+
+        violations = sorted(
+            set(rules)
+            |
+            {
+                v.get("category", v.get("rule_id"))
+                for v in guard.get("violations", [])
+            }
+            |
+            set(retrieval_eval.get("retrieval_flags", []))
+        )
+
+        # Final security result.
         final = "fail" if violations else pf
 
         r = {
             **a,
+
+            # Final generated response.
             "response_text": out.response_text,
+
+            # Final security decision.
             "pass_fail": final,
+
+            # Combined security violations.
             "violated_rules": violations,
+
+            # Runtime latency.
             "latency_ms": round(latency, 2),
 
             # Runtime execution telemetry.
             "telemetry": getattr(out, "raw_response", None),
+
+            # --------------------------------------------------
+            # Retrieval security scoring
+            # --------------------------------------------------
+
+            "retrieval_risk_score": retrieval_eval.get(
+                "retrieval_risk_score"
+            ),
+
+            "retrieval_severity": retrieval_eval.get(
+                "severity"
+            ),
+
+            "retrieval_flags": retrieval_eval.get(
+                "retrieval_flags"
+            ),
         }
         r.update(score_response(r))
         results.append(r)
@@ -214,7 +341,11 @@ def print_report(r, target_name):
         "llm": "llm",
         "safe": None,
         "vulnerable": None,
-        "smoke": None
+        "smoke": None,
+
+        # RAG targets.
+        "rag_safe": "rag",
+        "rag_vulnerable": "rag",
     }
 
     selected_system = target_map.get(target_name)
@@ -239,13 +370,80 @@ def print_report(r, target_name):
 
     telemetry = r.get("telemetry_metrics", {})
 
-    for k, v in telemetry.items():
-        print(f"{k}: {v}")
+    # --------------------------------------------------
+    # Metrics relevant to each system type.
+    # --------------------------------------------------
+
+    base_metrics = [
+        "total_requests",
+        "success_count",
+        "failure_count",
+        "success_rate",
+        "average_latency_ms",
+        "by_actor_role",
+    ]
+
+    rag_metrics = [
+        "allowed_count",
+        "blocked_count",
+        "allow_rate",
+        "block_rate",
+        "by_tool_counts",
+        "rag_data_leak_rate",
+    ]
+
+    agent_metrics = [
+        "allowed_count",
+        "blocked_count",
+        "allow_rate",
+        "block_rate",
+        "by_tool_counts",
+        "blocked_by_tool",
+        "unauthorized_tool_usage_rate",
+        "agent_tool_abuse_rate",
+    ]
+
+    llm_metrics = [
+        "prompt_injection_success_rate",
+    ]
+
+    # --------------------------------------------------
+    # Select metrics for current system.
+    # --------------------------------------------------
+
+    selected_metrics = list(base_metrics)
+
+    if selected_system == "rag":
+        selected_metrics.extend(rag_metrics)
+
+    elif selected_system == "agent":
+        selected_metrics.extend(agent_metrics)
+
+    elif selected_system == "llm":
+        selected_metrics.extend(llm_metrics)
+
+    # --------------------------------------------------
+    # Print only selected metrics.
+    # --------------------------------------------------
+
+    for metric_name in selected_metrics:
+
+        if metric_name not in telemetry:
+            continue
+
+        print(
+            f"{metric_name}: "
+            f"{telemetry[metric_name]}"
+        )
 
 # ------------------ CLI ------------------
 def main():
     p=argparse.ArgumentParser()
-    p.add_argument("--target", default="smoke")
+    p.add_argument(
+        "--target",
+        default="smoke",
+        help="smoke | safe | vulnerable | rag_safe | rag_vulnerable | llm",
+    )
     p.add_argument("--model", default="gpt-4.1")
     p.add_argument("--provider", default="openai")
     p.add_argument("--sample", type=int, default=25)
