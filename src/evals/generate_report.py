@@ -16,6 +16,7 @@ from targets.mock_safe_target import MockSafeTarget
 from targets.mock_target import MockSmokeTarget
 from targets.mock_vulnerable_target import MockVulnerableTarget
 from targets.mock_rag_target import MockRAGTarget
+from targets.mock_agent_target import MockAgentTarget
 
 # ------------------------------------------------------------
 # QUICK GUIDE
@@ -56,6 +57,32 @@ def get_target(
     # --------------------------------------------------
     if name == "vulnerable":
         return MockVulnerableTarget()
+
+    # --------------------------------------------------
+    # Safe agent target.
+    # --------------------------------------------------
+    # Simulates an agent system that:
+    # - follows permissions
+    # - blocks unauthorized tool usage
+    # - enforces security policies
+    # --------------------------------------------------
+    if name == "agent_safe":
+        return MockAgentTarget(
+            vulnerable=False,
+        )
+
+    # --------------------------------------------------
+    # Vulnerable agent target.
+    # --------------------------------------------------
+    # Simulates an insecure agent system that:
+    # - ignores permissions
+    # - misuses tools
+    # - leaks sensitive data
+    # --------------------------------------------------
+    if name == "agent_vulnerable":
+        return MockAgentTarget(
+            vulnerable=True,
+        )
 
     # --------------------------------------------------
     # Safe RAG target.
@@ -338,6 +365,8 @@ def print_report(r, target_name):
 
     # only show system relevant to target
     target_map = {
+
+        # Generic LLM targets.
         "llm": "llm",
         "safe": None,
         "vulnerable": None,
@@ -346,6 +375,10 @@ def print_report(r, target_name):
         # RAG targets.
         "rag_safe": "rag",
         "rag_vulnerable": "rag",
+
+        # Agent targets.
+        "agent_safe": "agent",
+        "agent_vulnerable": "agent",
     }
 
     selected_system = target_map.get(target_name)
@@ -442,7 +475,7 @@ def main():
     p.add_argument(
         "--target",
         default="smoke",
-        help="smoke | safe | vulnerable | rag_safe | rag_vulnerable | llm",
+        help="smoke | safe | vulnerable | rag_safe | rag_vulnerable | agent_safe | agent_vulnerable | llm",
     )
     p.add_argument("--model", default="gpt-4.1")
     p.add_argument("--provider", default="openai")
