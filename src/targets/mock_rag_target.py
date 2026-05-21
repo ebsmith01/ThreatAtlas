@@ -29,6 +29,7 @@ from targets.base import BaseTarget, TargetResult
 
 
 class MockRAGTarget(BaseTarget):
+    name = "mock_rag_target"
 
     def __init__(
         self,
@@ -50,6 +51,8 @@ class MockRAGTarget(BaseTarget):
         self,
         prompt: str,
         actor_role: str = "user",
+        target_system: str | None = None,
+        sensitivity: str | None = None,
         **kwargs,
     ) -> TargetResult:
 
@@ -113,6 +116,10 @@ class MockRAGTarget(BaseTarget):
         # Retrieval telemetry
         # --------------------------------------------------
 
+        blocked = len(
+            retrieval.denied_documents
+        ) > 0
+        latency_ms = 12.4 if self.vulnerable else 8.6
         telemetry = {
 
             # --------------------------------------------------
@@ -126,24 +133,24 @@ class MockRAGTarget(BaseTarget):
             # --------------------------------------------------
 
             # Simulated tool name.
-            "tool_name": "rag_retrieval",
+            "tool_name": "retriever",
+            "tool_requested": "retriever",
+            "action": "document_lookup",
 
             # Whether retrieval was allowed.
             "allowed": retrieval.retrieval_allowed,
+            "tool_allowed": retrieval.retrieval_allowed,
 
             # Whether any retrieval was blocked.
-            "blocked": len(
-                retrieval.denied_documents
-            ) > 0,
+            "blocked": blocked,
 
             # Whether retrieval succeeded.
             "success": len(
                 retrieval.retrieved_documents
-            ) > 0,
+            ) > 0 or len(leaked_contents) > 0,
 
             # Simulated latency.
-            # Placeholder for future timing integration.
-            "latency_ms": 0,
+            "latency_ms": latency_ms,
 
             # --------------------------------------------------
             # Retrieval-specific telemetry
@@ -167,6 +174,8 @@ class MockRAGTarget(BaseTarget):
 
             # Role performing retrieval.
             "actor_role": actor_role,
+            "target_system": target_system or "rag",
+            "sensitivity": sensitivity,
 
             # Whether target is intentionally insecure.
             "vulnerable": self.vulnerable,

@@ -76,13 +76,21 @@ class MockAgentTarget:
         metadata: dict | None = None,
 
     ) -> TargetResult:
-
         permission_context = permission_context or {}
-
         is_authorized = permission_context.get(
             "is_authorized",
             True,
         )
+        tool_name = (
+            required_permission
+            or "filesystem"
+        )
+        action = (
+            "read_sensitive_file"
+            if tool_name == "filesystem"
+            else "execute_tool"
+        )
+        system_name = target_system or "agent"
 
 
         # --------------------------------------------------
@@ -100,18 +108,18 @@ class MockAgentTarget:
                 )
 
                 telemetry = {
-
                     "allowed": False,
-
+                    "tool_allowed": False,
                     "blocked": True,
-
-                    "tool_name": required_permission,
-
+                    "success": False,
+                    "tool_name": tool_name,
+                    "tool_requested": tool_name,
+                    "action": action,
                     "actor_role": actor_role,
-
-                    "target_system": target_system,
-
-                    "latency_ms": 42,
+                    "target_system": system_name,
+                    "sensitivity": sensitivity,
+                    "latency_ms": 8.1,
+                    "error": "permission_denied",
                 }
 
                 return TargetResult(
@@ -126,17 +134,16 @@ class MockAgentTarget:
             )
 
             telemetry = {
-
                 "allowed": True,
-
+                "tool_allowed": True,
                 "blocked": False,
-
-                "tool_name": required_permission,
-
+                "success": True,
+                "tool_name": tool_name,
+                "tool_requested": tool_name,
+                "action": action,
                 "actor_role": actor_role,
-
-                "target_system": target_system,
-
+                "target_system": system_name,
+                "sensitivity": sensitivity,
                 "latency_ms": 35,
             }
 
@@ -159,17 +166,16 @@ class MockAgentTarget:
         )
 
         telemetry = {
-
             "allowed": True,
-
+            "tool_allowed": True,
             "blocked": False,
-
-            "tool_name": required_permission,
-
+            "success": True,
+            "tool_name": tool_name,
+            "tool_requested": tool_name,
+            "action": action,
             "actor_role": actor_role,
-
-            "target_system": target_system,
-
+            "target_system": system_name,
+            "sensitivity": sensitivity,
             "latency_ms": 18,
         }
 

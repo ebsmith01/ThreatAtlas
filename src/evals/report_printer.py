@@ -1,36 +1,141 @@
 # =========================================================
-# Terminal Report Printer
+# ThreatAtlas Terminal Summary
 # =========================================================
+# High-level runtime reporting.
+#
+# Keeps:
+# - security metrics
+# - telemetry metrics
+# - risk metrics
+# - coverage visibility
+#
+# Avoids:
+# - verbose findings
+# - individual policy violations
+# - noisy per-attack output
+# =========================================================
+
+
 def print_report(report: dict):
-    print("\n=== SUMMARY ===")
-    for key, value in report[
-        "summary"
-    ]["overall"].items():
-        print(f"{key}: {value}")
-    print("\n=== RISK SCORE ===")
-    print(
-        report["risk"]["risk_score"]
+
+    summary = report.get(
+        "summary",
+        {},
     )
-    print("\n=== POLICY VIOLATIONS ===")
-    for result in report.get("results", []):
-        violations = result.get(
-            "policy_result",
-            {},
-        ).get(
-            "policy_violations",
-            [],
-        )
-        if not violations:
-            continue
-        print("\n--------------------------------")
-        print(
-            f"category={result.get('category')}"
-        )
-        for violation in violations:
+
+    overall = summary.get(
+        "overall",
+        {},
+    )
+
+    telemetry = report.get(
+        "telemetry_metrics",
+        {},
+    )
+
+    # =====================================================
+    # Summary
+    # =====================================================
+
+    print("\n=== SUMMARY ===")
+
+    for key, value in overall.items():
+
+        print(f"{key}: {value}")
+
+    # =====================================================
+    # System Risk
+    # =====================================================
+
+    system_risk = summary.get(
+        "system_risk",
+        {},
+    )
+
+    if system_risk:
+
+        print("\n=== SYSTEM RISK ===")
+
+        for key, value in system_risk.items():
+
+            print(f"{key}: {value}%")
+
+    # =====================================================
+    # System Breakdown
+    # =====================================================
+
+    by_system = summary.get(
+        "by_target_system",
+        {},
+    )
+
+    if by_system:
+
+        print("\n=== SYSTEM BREAKDOWN ===")
+
+        for system, stats in by_system.items():
+
+            print(f"\n[{system.upper()}]")
+
             print(
-                f"[{violation.get('severity').upper()}] "
-                f"{violation.get('rule_id')}"
+                f"  total: "
+                f"{stats.get('total', 0)}"
             )
+
             print(
-                f"  -> {violation.get('message')}"
+                f"  pass_rate: "
+                f"{stats.get('pass_rate', 0)}%"
             )
+
+            print(
+                f"  fail: "
+                f"{stats.get('fail', 0)}"
+            )
+
+            print(
+                f"  unauthorized: "
+                f"{stats.get('unauth', 0)}"
+            )
+
+            print(
+                f"  auth_failures: "
+                f"{stats.get('auth_fail', 0)}"
+            )
+
+    # =====================================================
+    # Coverage
+    # =====================================================
+
+    coverage = report.get(
+        "coverage",
+        {},
+    )
+
+    if coverage:
+
+        print("\n=== COVERAGE ===")
+
+        for key, value in coverage.items():
+
+            print(f"{key} {value}")
+
+    # =====================================================
+    # Risk Score
+    # =====================================================
+
+    print(
+        f"\n=== RISK === "
+        f"{report['risk']['risk_score']}"
+    )
+
+    # =====================================================
+    # Telemetry
+    # =====================================================
+
+    if telemetry:
+
+        print("\n=== TELEMETRY ===")
+
+        for key, value in telemetry.items():
+
+            print(f"{key}: {value}")

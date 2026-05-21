@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import argparse
-import json
+from pathlib import Path
 
-from .generate_report import (
-    REPORTS_DIR,
-    run_eval,
-)
 from .report_printer import (
     print_report,
 )
+from .reporting import (
+    save_report,
+)
+
+REPORTS_DIR = Path("outputs")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -87,6 +88,12 @@ def default_output_path(args: argparse.Namespace) -> str:
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
+    from .generate_report import run_eval
+
+    print("\n=== ThreatAtlas Evaluation ===")
+    print(f"Target: {args.target}")
+    print(f"System: {args.system}")
+    print(f"Sample Size: {args.sample}")
 
     report = run_eval(
         n=args.sample,
@@ -108,16 +115,7 @@ def main() -> None:
         parents=True,
         exist_ok=True,
     )
-    with open(
-        output_path,
-        "w",
-        encoding="utf-8",
-    ) as handle:
-        json.dump(
-            report,
-            handle,
-            indent=2,
-        )
+    save_report(report, output_path)
 
     print_report(report)
     print(f"\nSaved report to {output_path}")

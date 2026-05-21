@@ -17,6 +17,9 @@ def build_report(results, atlas_summary=None):
 
 
 def save_report(report, output_path):
+    """
+    Persist a JSON report to disk.
+    """
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -59,8 +62,8 @@ def print_report_summary(report):
         print("\n=== ATLAS Summary ===")
         for category, value in sorted(report["atlas_summary"].items()):
             print(f"{category}: {value}")
-            
-            
+
+
 def build_atlas_summary(results):
     atlas = {}
 

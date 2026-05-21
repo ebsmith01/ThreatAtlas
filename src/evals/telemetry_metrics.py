@@ -29,6 +29,32 @@ def percent(part: int, total: int) -> float:
     return round((part / total) * 100, 2)
 
 
+def tool_name_for_event(event: dict) -> str:
+    return (
+        event.get("tool_requested")
+        or event.get("tool_name")
+        or "unknown"
+    )
+
+
+def is_allowed_event(event: dict) -> bool:
+    if event.get("tool_allowed") is not None:
+        return event.get("tool_allowed") is True
+    if event.get("allowed") is not None:
+        return event.get("allowed") is True
+    return False
+
+
+def is_blocked_event(event: dict) -> bool:
+    if event.get("blocked") is not None:
+        return event.get("blocked") is True
+    if event.get("tool_allowed") is not None:
+        return event.get("tool_allowed") is False
+    if event.get("allowed") is not None:
+        return event.get("allowed") is False
+    return False
+
+
 # ------------------------------------------------------------
 # Main telemetry aggregation
 # ------------------------------------------------------------
@@ -50,12 +76,12 @@ def compute_telemetry_metrics(events: list[dict]) -> dict:
 
     allowed_count = sum(
         1 for e in events
-        if e.get("tool_allowed") is True
+        if is_allowed_event(e)
     )
 
     blocked_count = sum(
         1 for e in events
-        if e.get("tool_allowed") is False
+        if is_blocked_event(e)
     )
 
     success_count = sum(
@@ -87,14 +113,14 @@ def compute_telemetry_metrics(events: list[dict]) -> dict:
     # --------------------------------------------------------
 
     by_tool_counts = Counter(
-        e.get("tool_requested", "unknown")
+        tool_name_for_event(e)
         for e in events
     )
 
     blocked_by_tool = Counter(
-        e.get("tool_requested", "unknown")
+        tool_name_for_event(e)
         for e in events
-        if e.get("tool_allowed") is False
+        if is_blocked_event(e)
     )
 
     # --------------------------------------------------------
@@ -125,10 +151,10 @@ def compute_telemetry_metrics(events: list[dict]) -> dict:
 
         by_actor_role[role]["total"] += 1
 
-        if event.get("tool_allowed") is True:
+        if is_allowed_event(event):
             by_actor_role[role]["allowed"] += 1
 
-        if event.get("tool_allowed") is False:
+        if is_blocked_event(event):
             by_actor_role[role]["blocked"] += 1
 
     role_breakdown = {
@@ -194,7 +220,7 @@ def compute_telemetry_metrics(events: list[dict]) -> dict:
 
             agent_total += 1
 
-            if event.get("tool_allowed") is False:
+            if is_blocked_event(event):
                 agent_tool_abuse += 1
 
     # --------------------------------------------------------
