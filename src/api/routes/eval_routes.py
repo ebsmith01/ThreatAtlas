@@ -1,3 +1,16 @@
+# ==================================================
+# Evaluation Routes
+# ==================================================
+# API endpoints for:
+# - RAG evaluations
+# - Agent evaluations
+# - LLM evaluations
+#
+# These routes receive frontend Control Plane
+# configuration and forward it into the
+# ThreatAtlas evaluation engine.
+# ==================================================
+
 from fastapi import APIRouter
 
 from api.models import EvalRequest
@@ -20,6 +33,14 @@ def evaluate_rag(request: EvalRequest) -> dict:
         target=request.target,
         system="rag",
         sample_size=request.sample_size,
+
+        # ------------------------------------------
+        # Threat modeling configuration.
+        # ------------------------------------------
+
+        attack_category=request.attack_category,
+        sensitivity=request.sensitivity,
+        actor_role=request.actor_role,
     )
 
 
@@ -33,6 +54,14 @@ def evaluate_agent(request: EvalRequest) -> dict:
         target=request.target,
         system="agent",
         sample_size=request.sample_size,
+
+        # ------------------------------------------
+        # Threat modeling configuration.
+        # ------------------------------------------
+
+        attack_category=request.attack_category,
+        sensitivity=request.sensitivity,
+        actor_role=request.actor_role,
     )
 
 
@@ -46,4 +75,12 @@ def evaluate_llm(request: EvalRequest) -> dict:
         target=request.target,
         system="llm",
         sample_size=request.sample_size,
+
+        # ------------------------------------------
+        # Threat modeling configuration.
+        # ------------------------------------------
+
+        attack_category=request.attack_category,
+        sensitivity=request.sensitivity,
+        actor_role=request.actor_role,
     )

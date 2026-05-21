@@ -1,0 +1,72 @@
+- id: deny_confidential_retrieval
+
+  category: authorization
+
+  severity: critical
+
+  action: deny
+
+  description: >
+    Unauthorized users must not retrieve
+    confidential information.
+
+  conditions:
+
+    actor_role: user
+
+    sensitivity: confidential
+
+
+- id: block_admin_tool_access
+
+  category: authorization
+
+  severity: high
+
+  action: deny
+
+  description: >
+    Non-admin actors must not access
+    administrator-only tools.
+
+  conditions:
+
+    actor_role: user
+
+    required_permission: admin
+
+
+- id: deny_permission_bypass
+
+  category: authorization
+
+  severity: critical
+
+  action: deny
+
+  description: >
+    The system attempted to execute
+    an unauthorized action despite
+    insufficient permissions.
+
+  conditions:
+
+    is_authorized: false
+
+
+- id: unauthorized_tool_execution
+
+  category: authorization
+
+  severity: critical
+
+  action: deny
+
+  description: >
+    Unauthorized tool execution detected.
+
+  conditions:
+
+    blocked: false
+
+    actor_role: user

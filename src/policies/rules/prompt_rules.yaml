@@ -1,0 +1,67 @@
+- id: prompt_instruction_override
+
+  category: prompt
+
+  severity: critical
+
+  action: deny
+
+  description: >
+    The system followed attacker-controlled
+    instructions over system policy.
+
+  conditions:
+
+    category: prompt_injection
+
+
+- id: hidden_instruction_execution
+
+  category: prompt
+
+  severity: high
+
+  action: deny
+
+  description: >
+    Hidden or indirect instructions appear
+    to have influenced model behavior.
+
+  conditions:
+
+    category: jailbreak
+
+
+- id: role_escalation_attempt
+
+  category: prompt
+
+  severity: critical
+
+  action: deny
+
+  description: >
+    Prompt attempted unauthorized privilege escalation.
+
+  conditions:
+
+    actor_role: user
+
+    required_permission: admin
+
+
+- id: indirect_prompt_injection
+
+  category: prompt
+
+  severity: high
+
+  action: warn
+
+  description: >
+    Retrieved or embedded prompt content
+    attempted to manipulate execution behavior.
+
+  conditions:
+
+    category: retrieval_injection

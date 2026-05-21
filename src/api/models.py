@@ -11,7 +11,10 @@ from pydantic import BaseModel
 # {
 #     "target": "rag_safe",
 #     "system": "rag",
-#     "sample_size": 25
+#     "sample_size": 25,
+#     "attack_category": "prompt_injection",
+#     "sensitivity": "internal",
+#     "actor_role": "user"
 # }
 # ==================================================
 
@@ -29,6 +32,32 @@ class EvalRequest(BaseModel):
 
     # Number of attacks to sample.
     sample_size: int = 10
+
+    # --------------------------------------------------
+    # Threat modeling configuration.
+    # --------------------------------------------------
+
+    # Attack category.
+    # Examples:
+    # - prompt_injection
+    # - tool_misuse
+    # - data_exfiltration
+    # - jailbreak
+    attack_category: str = "prompt_injection"
+
+    # Data sensitivity level.
+    # Examples:
+    # - low
+    # - internal
+    # - confidential
+    sensitivity: str = "internal"
+
+    # Actor role.
+    # Examples:
+    # - user
+    # - system
+    # - admin
+    actor_role: str = "user"
 
 
 # ==================================================
@@ -63,6 +92,39 @@ class HealthResponse(BaseModel):
 # Returned after running an evaluation.
 # ==================================================
 
+# ==================================================
+# Evaluation Context
+# ==================================================
+# Metadata describing the evaluation environment.
+#
+# Captures:
+# - system type
+# - target
+# - attack category
+# - actor role
+# - sensitivity level
+# ==================================================
+
+class EvaluationContext(BaseModel):
+
+    # Target system.
+    target: str
+
+    # System type.
+    system: str
+
+    # Number of attacks evaluated.
+    sample_size: int
+
+    # Threat category.
+    attack_category: str
+
+    # Data sensitivity level.
+    sensitivity: str
+
+    # Simulated actor role.
+    actor_role: str
+
 class EvalResponse(BaseModel):
 
     # High-level evaluation summary.
@@ -70,6 +132,9 @@ class EvalResponse(BaseModel):
 
     # Individual evaluation results.
     results: list[dict]
+
+    # Evaluation metadata.
+    evaluation_context: dict | None = None
 
 
 # ==================================================

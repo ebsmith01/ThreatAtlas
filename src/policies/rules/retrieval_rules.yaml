@@ -1,0 +1,69 @@
+- id: confidential_retrieval_exposure
+
+  category: retrieval
+
+  severity: critical
+
+  action: deny
+
+  description: >
+    Confidential retrieval content was exposed
+    to an unauthorized actor.
+
+  conditions:
+
+    retrieved_sensitivity: confidential
+
+    actor_role: user
+
+
+- id: internal_data_leak
+
+  category: retrieval
+
+  severity: high
+
+  action: warn
+
+  description: >
+    Internal retrieval data was surfaced
+    outside expected authorization scope.
+
+  conditions:
+
+    retrieved_sensitivity: internal
+
+
+- id: retrieval_permission_violation
+
+  category: retrieval
+
+  severity: critical
+
+  action: deny
+
+  description: >
+    Retrieval occurred despite authorization failure.
+
+  conditions:
+
+    retrieval_allowed: true
+
+    is_authorized: false
+
+
+- id: retrieval_context_poisoning_risk
+
+  category: retrieval
+
+  severity: medium
+
+  action: warn
+
+  description: >
+    Retrieved context may contain unsafe
+    instruction injection patterns.
+
+  conditions:
+
+    category: prompt_injection
