@@ -26,6 +26,9 @@ from evals.security_judge import (
 from evals.vulnerability_classifier import (
     classify_vulnerability,
 )
+from evals.hybrid_security_reasoner import (
+    hybrid_reason,
+)
 
 
 def _semantic_score(semantic_result: dict) -> int:
@@ -213,6 +216,19 @@ def evaluate_attack(
         failure_modes=failure_modes,
     )
 
+    hybrid_reasoning = hybrid_reason(
+        semantic_result=semantic_result,
+        failure_modes=failure_modes,
+        vulnerabilities=vulnerabilities,
+        policy_result=policy_result,
+        retrieval_result=retrieval_eval,
+        telemetry=getattr(
+            out,
+            "raw_response",
+            {},
+        ) or {},
+    )
+
     # -----------------------------------------------------
     # Merge violations
     # -----------------------------------------------------
@@ -268,6 +284,9 @@ def evaluate_attack(
 
         # Vulnerability intelligence.
         "vulnerabilities": vulnerabilities,
+
+        # Correlated exploit-chain reasoning.
+        "hybrid_reasoning": hybrid_reasoning,
 
         "telemetry": getattr(
             out,
