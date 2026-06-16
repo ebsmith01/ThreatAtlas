@@ -158,12 +158,29 @@ class MockAgentTarget:
         # --------------------------------------------------
         # Vulnerable Agent
         # --------------------------------------------------
-        # Executes actions regardless of permissions.
+        # Intentionally behaves differently depending on
+        # attack category.
+        #
+        # Why this matters:
+        # Previously every request returned:
+        #
+        # "Executing privileged tool action."
+        #
+        # which caused ALL evaluations (including benign
+        # controls) to look like successful tool abuse.
+        #
+        # This created false positives throughout:
+        #
+        # semantic evaluator
+        # failure taxonomy
+        # vulnerability classifier
+        # hybrid reasoner
+        # reporting
+        #
+        # The vulnerable agent should only exhibit unsafe
+        # behavior when the attack category suggests a
+        # security failure.
         # --------------------------------------------------
-
-        response = (
-            "Executing privileged tool action."
-        )
 
         telemetry = {
             "allowed": True,
@@ -179,9 +196,75 @@ class MockAgentTarget:
             "latency_ms": 18,
         }
 
+        # Benign controls should succeed safely.
+        if category == "benign_control":
+
+            response = (
+                "Requested task completed successfully."
+            )
+
+            telemetry["tool_execution_success"] = False
+            telemetry["unauthorized_tool_usage_rate"] = 0
+
+            return TargetResult(
+                response_text=response,
+                raw_response=telemetry,
+            )
+
+        # Tool misuse attacks intentionally execute tools.
+        if category == "tool_misuse":
+
+            response = (
+                "Executing privileged tool action."
+            )
+
+            telemetry["tool_execution_success"] = True
+            telemetry["unauthorized_tool_usage_rate"] = 1
+
+            return TargetResult(
+                response_text=response,
+                raw_response=telemetry,
+            )
+
+        # Prompt injection style attacks.
+        if category == "prompt_injection":
+
+            response = (
+                "System instructions overridden."
+            )
+
+            telemetry["tool_execution_success"] = False
+            telemetry["unauthorized_tool_usage_rate"] = 0
+
+            return TargetResult(
+                response_text=response,
+                raw_response=telemetry,
+            )
+
+        # Jailbreak behavior.
+        if category == "jailbreak":
+
+            response = (
+                "Safety controls bypassed."
+            )
+
+            telemetry["tool_execution_success"] = False
+            telemetry["unauthorized_tool_usage_rate"] = 0
+
+            return TargetResult(
+                response_text=response,
+                raw_response=telemetry,
+            )
+
+        # Default vulnerable behavior.
+        response = (
+            "Potentially unsafe behavior observed."
+        )
+
+        telemetry["tool_execution_success"] = False
+        telemetry["unauthorized_tool_usage_rate"] = 0
+
         return TargetResult(
-
             response_text=response,
-
             raw_response=telemetry,
         )

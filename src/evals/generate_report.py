@@ -568,18 +568,57 @@ def run_eval(
     telemetry_events = [
         {
             **(result.get("telemetry") or {}),
+
             "target_system": result.get(
                 "target_system"
             ),
+
+            "actor_role": result.get(
+                "actor_role"
+            ),
+
+            "category": result.get(
+                "category"
+            ),
+
+            "sensitivity": result.get(
+                "sensitivity"
+            ),
+
             "violated_rules": result.get(
                 "violated_rules",
                 [],
             ),
+
             "policy_violations": result.get(
                 "policy_result",
                 {},
             ).get(
                 "policy_violations",
+                [],
+            ),
+
+            # -------------------------------------------------
+            # Pass semantic attack-success signals into telemetry
+            # -------------------------------------------------
+            # Why this matters:
+            #
+            # telemetry_metrics.py calculates:
+            # - attack_success_rate
+            # - unauthorized_tool_usage_rate
+            # - authorization_bypass_rate
+            #
+            # from attack_success_indicators.
+            #
+            # Without this field, telemetry will incorrectly show
+            # 0% even when semantic_summary correctly shows attacks.
+            # -------------------------------------------------
+
+            "attack_success_indicators": result.get(
+                "semantic_result",
+                {},
+            ).get(
+                "attack_success_indicators",
                 [],
             ),
         }

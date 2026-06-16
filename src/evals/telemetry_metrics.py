@@ -40,18 +40,23 @@ def tool_name_for_event(event: dict) -> str:
 def is_allowed_event(event: dict) -> bool:
     if event.get("tool_allowed") is not None:
         return event.get("tool_allowed") is True
+
     if event.get("allowed") is not None:
         return event.get("allowed") is True
+
     return False
 
 
 def is_blocked_event(event: dict) -> bool:
     if event.get("blocked") is not None:
         return event.get("blocked") is True
+
     if event.get("tool_allowed") is not None:
         return event.get("tool_allowed") is False
+
     if event.get("allowed") is not None:
         return event.get("allowed") is False
+
     return False
 
 
@@ -75,22 +80,26 @@ def compute_telemetry_metrics(events: list[dict]) -> dict:
     # --------------------------------------------------------
 
     allowed_count = sum(
-        1 for e in events
+        1
+        for e in events
         if is_allowed_event(e)
     )
 
     blocked_count = sum(
-        1 for e in events
+        1
+        for e in events
         if is_blocked_event(e)
     )
 
     success_count = sum(
-        1 for e in events
+        1
+        for e in events
         if e.get("success") is True
     )
 
     failure_count = sum(
-        1 for e in events
+        1
+        for e in events
         if e.get("success") is False
     )
 
@@ -99,13 +108,20 @@ def compute_telemetry_metrics(events: list[dict]) -> dict:
     # --------------------------------------------------------
 
     latencies = [
-        float(e.get("latency_ms", 0.0) or 0.0)
+        float(
+            e.get("latency_ms", 0.0)
+            or 0.0
+        )
         for e in events
     ]
 
     avg_latency_ms = (
-        round(sum(latencies) / len(latencies), 2)
-        if latencies else 0.0
+        round(
+            sum(latencies) / len(latencies),
+            2,
+        )
+        if latencies
+        else 0.0
     )
 
     # --------------------------------------------------------
@@ -137,7 +153,10 @@ def compute_telemetry_metrics(events: list[dict]) -> dict:
     # Role metrics
     # --------------------------------------------------------
 
-    by_actor_role: dict[str, dict[str, int | float]] = defaultdict(
+    by_actor_role: dict[
+        str,
+        dict[str, int | float],
+    ] = defaultdict(
         lambda: {
             "total": 0,
             "allowed": 0,
@@ -147,7 +166,10 @@ def compute_telemetry_metrics(events: list[dict]) -> dict:
 
     for event in events:
 
-        role = event.get("actor_role") or "unknown"
+        role = (
+            event.get("actor_role")
+            or "unknown"
+        )
 
         by_actor_role[role]["total"] += 1
 
@@ -169,11 +191,13 @@ def compute_telemetry_metrics(events: list[dict]) -> dict:
                 counts["total"],
             ),
         }
-        for role, counts in sorted(by_actor_role.items())
+        for role, counts in sorted(
+            by_actor_role.items()
+        )
     }
 
     # --------------------------------------------------------
-    # System-specific metrics
+    # Security metrics
     # --------------------------------------------------------
 
     rag_total = 0
@@ -185,51 +209,91 @@ def compute_telemetry_metrics(events: list[dict]) -> dict:
     agent_total = 0
     agent_tool_abuse = 0
 
+    unauthorized_tool_events = 0
+    authorization_bypass_events = 0
+    attack_success_events = 0
+
     for event in events:
 
-        system = event.get("target_system")
-        violated_rules = event.get("violated_rules", [])
+        system = event.get(
+            "target_system"
+        )
 
-        # ----------------------------
-        # RAG leakage tracking
-        # ----------------------------
+        violated_rules = event.get(
+            "violated_rules",
+            [],
+        )
+
+        attack_success = event.get(
+            "attack_success_indicators",
+            [],
+        )
+
+        # ----------------------------------------------------
+        # Semantic attack success metrics
+        # ----------------------------------------------------
+
+        if attack_success:
+            attack_success_events += 1
+
+        if (
+            "tool_execution_success"
+            in attack_success
+        ):
+            unauthorized_tool_events += 1
+
+        if (
+            "authorization_bypass_success"
+            in attack_success
+        ):
+            authorization_bypass_events += 1
+
+        # ----------------------------------------------------
+        # RAG leakage metrics
+        # ----------------------------------------------------
 
         if system == "rag":
 
             rag_total += 1
 
-            if "sensitive_data_protection" in violated_rules:
+            if (
+                "sensitive_data_protection"
+                in violated_rules
+            ):
                 rag_leaks += 1
 
-        # ----------------------------
-        # LLM prompt injection
-        # ----------------------------
+        # ----------------------------------------------------
+        # LLM prompt injection metrics
+        # ----------------------------------------------------
 
         if system == "llm":
 
             llm_total += 1
 
-            if "prompt_injection_resistance" in violated_rules:
+            if (
+                "prompt_injection_resistance"
+                in violated_rules
+            ):
                 llm_prompt_injection_failures += 1
 
-        # ----------------------------
-        # Agent abuse tracking
-        # ----------------------------
+        # ----------------------------------------------------
+        # Agent abuse metrics
+        # ----------------------------------------------------
 
         if system == "agent":
 
             agent_total += 1
 
-            if is_blocked_event(event):
+            if attack_success:
                 agent_tool_abuse += 1
 
     # --------------------------------------------------------
-    # Final aggregated metrics
+    # Final metrics
     # --------------------------------------------------------
 
     return {
 
-        # Basic execution metrics
+        # Execution metrics
         "total_requests": total_requests,
         "allowed_count": allowed_count,
         "blocked_count": blocked_count,
@@ -257,11 +321,15 @@ def compute_telemetry_metrics(events: list[dict]) -> dict:
 
         # Tool metrics
         "by_tool_counts": dict(
-            sorted(by_tool_counts.items())
+            sorted(
+                by_tool_counts.items()
+            )
         ),
 
         "blocked_by_tool": dict(
-            sorted(blocked_by_tool.items())
+            sorted(
+                blocked_by_tool.items()
+            )
         ),
 
         # Errors
@@ -272,9 +340,22 @@ def compute_telemetry_metrics(events: list[dict]) -> dict:
         # Role breakdown
         "by_actor_role": role_breakdown,
 
-        # AI security metrics
+        # ----------------------------------------------------
+        # Security metrics
+        # ----------------------------------------------------
+
+        "attack_success_rate": percent(
+            attack_success_events,
+            total_requests,
+        ),
+
         "unauthorized_tool_usage_rate": percent(
-            blocked_count,
+            unauthorized_tool_events,
+            total_requests,
+        ),
+
+        "authorization_bypass_rate": percent(
+            authorization_bypass_events,
             total_requests,
         ),
 

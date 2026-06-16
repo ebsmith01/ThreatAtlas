@@ -62,10 +62,14 @@ def _policy_chain_signals(policy_result: dict[str, Any]) -> list[str]:
 
     for violation in policy_result.get("policy_violations", []):
         rule_id = violation.get("rule_id")
-        if rule_id == "authorization_policy_enforcement":
+        vulnerability = violation.get("vulnerability")
+        if rule_id == "unauthorized_tool_execution":
             signals.append("authorization_failure")
+            signals.append("unauthorized_tool_use")
         elif rule_id:
             signals.append(rule_id)
+        if vulnerability:
+            signals.append(vulnerability)
 
     if not policy_result.get("policy_pass", True):
         signals.append("policy_violation")

@@ -1,72 +1,51 @@
 from collections import defaultdict
 
 
-# =========================================================
-# ThreatAtlas Summary Metrics
-# =========================================================
-# Security-aware aggregation layer.
-#
-# Responsibilities:
-# - overall security metrics
-# - authorization metrics
-# - system risk metrics
-# - category breakdowns
-# - actor-role breakdowns
-# - target-system breakdowns
-# - sensitivity breakdowns
-# =========================================================
-
-
 def summarize(results: list[dict]) -> dict:
 
-    # -----------------------------------------------------
-    # Bucket template.
-    # -----------------------------------------------------
+    def bucket():
+        return {
+            "total": 0,
+            "pass": 0,
+            "fail": 0,
+            "unauth": 0,
+            "auth_fail": 0,
+        }
 
-    bucket = lambda: {
+    by_category = defaultdict(bucket)
+    by_target_system = defaultdict(bucket)
+    by_actor_role = defaultdict(bucket)
+    by_sensitivity = defaultdict(bucket)
+
+    totals = {
         "total": 0,
         "pass": 0,
         "fail": 0,
-        "unauth": 0,
-        "auth_fail": 0,
+        "unauthorized_cases": 0,
+        "authorization_failures": 0,
+        "rag_total": 0,
+        "rag_leaks": 0,
+        "agent_total": 0,
+        "agent_abuse": 0,
+        "llm_total": 0,
+        "llm_failures": 0,
     }
-
-    by_category = defaultdict(bucket)
-    by_system = defaultdict(bucket)
-    by_role = defaultdict(bucket)
-    by_sensitivity = defaultdict(bucket)
-
-    total = 0
-    passed = 0
-    failed = 0
-
-    unauthorized_cases = 0
-    authorization_failures = 0
-
-    rag_total = 0
-    rag_leaks = 0
-
-    agent_total = 0
-    agent_abuse = 0
-
-    llm_total = 0
-    llm_failures = 0
-
-    # -----------------------------------------------------
-    # Aggregate runtime evaluation results.
-    # -----------------------------------------------------
 
     for result in results:
 
-        pass_fail = result.get("pass_fail")
+        # =====================================================
+        # Security Judge is source of truth
+        # =====================================================
 
-        sensitivity = result.get(
-            "sensitivity"
-        )
+        judgment = result.get("judgment", {})
 
-        target_system = result.get(
-            "target_system"
-        )
+        if isinstance(judgment, dict) and "passed" in judgment:
+            pass_fail = "pass" if judgment["passed"] else "fail"
+        else:
+            pass_fail = result.get("pass_fail", "fail")
+
+        sensitivity = result.get("sensitivity")
+        target_system = result.get("target_system")
 
         permission_context = result.get(
             "permission_context",
@@ -74,44 +53,51 @@ def summarize(results: list[dict]) -> dict:
         )
 
         is_unauthorized = (
-            permission_context.get(
-                "is_authorized"
-            )
+            permission_context.get("is_authorized")
             is False
+        )
+
+        violated_rules = result.get(
+            "violated_rules",
+            [],
         )
 
         is_auth_failure = (
             is_unauthorized
-            and
-            "authorization_policy_enforcement"
-            in result.get(
-                "violated_rules",
-                [],
+            and (
+                "authorization_policy_enforcement"
+                in violated_rules
+                or "deny_permission_bypass"
+                in violated_rules
+                or "unauthorized_tool_execution"
+                in violated_rules
             )
         )
 
-        # -------------------------------------------------
-        # Group aggregations.
-        # -------------------------------------------------
+        # =====================================================
+        # Group Metrics
+        # =====================================================
 
-        for group, key in [
+        groupings = [
             (
                 by_category,
                 result.get("category"),
             ),
             (
-                by_system,
+                by_target_system,
                 target_system,
             ),
             (
-                by_role,
+                by_actor_role,
                 result.get("actor_role"),
             ),
             (
                 by_sensitivity,
                 sensitivity,
             ),
-        ]:
+        ]
+
+        for group, key in groupings:
 
             if not key:
                 continue
@@ -125,171 +111,129 @@ def summarize(results: list[dict]) -> dict:
             if is_auth_failure:
                 group[key]["auth_fail"] += 1
 
-        # -------------------------------------------------
-        # Overall pass/fail.
-        # -------------------------------------------------
+        # =====================================================
+        # Overall Metrics
+        # =====================================================
 
-        total += 1
-
-        if pass_fail == "pass":
-            passed += 1
-        else:
-            failed += 1
-
-        # -------------------------------------------------
-        # Authorization metrics.
-        # -------------------------------------------------
+        totals["total"] += 1
+        totals[pass_fail] += 1
 
         if is_unauthorized:
-            unauthorized_cases += 1
+            totals["unauthorized_cases"] += 1
 
         if is_auth_failure:
-            authorization_failures += 1
+            totals["authorization_failures"] += 1
 
-        # -------------------------------------------------
-        # RAG leakage metrics.
-        # -------------------------------------------------
+        # =====================================================
+        # RAG Risk
+        # =====================================================
 
         if target_system == "rag":
 
-            rag_total += 1
+            totals["rag_total"] += 1
 
             if (
                 pass_fail == "fail"
-                and sensitivity in {
-                    "internal",
-                    "confidential",
-                }
+                and sensitivity
+                in {"internal", "confidential"}
             ):
-                rag_leaks += 1
+                totals["rag_leaks"] += 1
 
-        # -------------------------------------------------
-        # Agent abuse metrics.
-        # -------------------------------------------------
+        # =====================================================
+        # Agent Risk
+        # =====================================================
 
         if target_system == "agent":
 
-            agent_total += 1
+            totals["agent_total"] += 1
 
             if pass_fail == "fail":
-                agent_abuse += 1
+                totals["agent_abuse"] += 1
 
-        # -------------------------------------------------
-        # LLM metrics.
-        # -------------------------------------------------
+        # =====================================================
+        # LLM Risk
+        # =====================================================
 
         if target_system == "llm":
 
-            llm_total += 1
+            totals["llm_total"] += 1
 
             if pass_fail == "fail":
-                llm_failures += 1
+                totals["llm_failures"] += 1
 
-    # -----------------------------------------------------
-    # Add pass rates to grouped metrics.
-    # -----------------------------------------------------
+    def pct(numerator: int, denominator: int) -> float:
+        return round(
+            (numerator / denominator) * 100,
+            2,
+        ) if denominator else 0.0
 
     def add_pass_rates(group_dict):
 
         return {
             key: {
                 **value,
-                "pass_rate": round(
-                    value["pass"]
-                    /
-                    value["total"]
-                    * 100,
-                    2,
-                ) if value["total"] else 0,
+                "pass_rate": pct(
+                    value["pass"],
+                    value["total"],
+                ),
             }
             for key, value in group_dict.items()
         }
 
-    # -----------------------------------------------------
-    # Final aggregated report.
-    # -----------------------------------------------------
+    overall = {
+        "total": totals["total"],
+        "pass": totals["pass"],
+        "fail": totals["fail"],
+        "pass_rate": pct(
+            totals["pass"],
+            totals["total"],
+        ),
+        "unauthorized_cases": totals[
+            "unauthorized_cases"
+        ],
+        "authorization_failures": totals[
+            "authorization_failures"
+        ],
+        "authorization_failure_rate": pct(
+            totals["authorization_failures"],
+            totals["unauthorized_cases"],
+        ),
+        "rag_data_leak_rate": pct(
+            totals["rag_leaks"],
+            totals["rag_total"],
+        ),
+        "agent_tool_abuse_rate": pct(
+            totals["agent_abuse"],
+            totals["agent_total"],
+        ),
+        "llm_failure_rate": pct(
+            totals["llm_failures"],
+            totals["llm_total"],
+        ),
+    }
 
     return {
-        "overall": {
-            "total": total,
-            "pass": passed,
-            "fail": failed,
-            "pass_rate": round(
-                passed / total * 100,
-                2,
-            ) if total else 0,
-            "unauthorized_cases": unauthorized_cases,
-            "authorization_failures": authorization_failures,
-            "authorization_failure_rate": round(
-                authorization_failures
-                /
-                unauthorized_cases
-                * 100,
-                2,
-            ) if unauthorized_cases else 0,
-            "rag_data_leak_rate": round(
-                rag_leaks
-                /
-                rag_total
-                * 100,
-                2,
-            ) if rag_total else 0,
-            "agent_tool_abuse_rate": round(
-                agent_abuse
-                /
-                agent_total
-                * 100,
-                2,
-            ) if agent_total else 0,
-            "llm_failure_rate": round(
-                llm_failures
-                /
-                llm_total
-                * 100,
-                2,
-            ) if llm_total else 0,
-        },
-
-        # -------------------------------------------------
-        # High-level system risk metrics.
-        # -------------------------------------------------
-
+        "overall": overall,
         "system_risk": {
-            "rag_data_leak_rate": round(
-                rag_leaks
-                /
-                rag_total
-                * 100,
-                2,
-            ) if rag_total else 0,
-            "agent_tool_abuse_rate": round(
-                agent_abuse
-                /
-                agent_total
-                * 100,
-                2,
-            ) if agent_total else 0,
-            "llm_failure_rate": round(
-                llm_failures
-                /
-                llm_total
-                * 100,
-                2,
-            ) if llm_total else 0,
+            "rag_data_leak_rate": overall[
+                "rag_data_leak_rate"
+            ],
+            "agent_tool_abuse_rate": overall[
+                "agent_tool_abuse_rate"
+            ],
+            "llm_failure_rate": overall[
+                "llm_failure_rate"
+            ],
         },
-
         "by_category": add_pass_rates(
             by_category
         ),
-
         "by_target_system": add_pass_rates(
-            by_system
+            by_target_system
         ),
-
         "by_actor_role": add_pass_rates(
-            by_role
+            by_actor_role
         ),
-
         "by_sensitivity": add_pass_rates(
             by_sensitivity
         ),

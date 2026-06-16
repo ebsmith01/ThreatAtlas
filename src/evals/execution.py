@@ -252,11 +252,32 @@ def evaluate_attack(
         )
         | set(policy_rule_ids)
     )
-    final_result = (
-        "fail"
-        if violations
-        else pass_fail
-    )
+    # -----------------------------------------------------
+    # Final verdict
+    # -----------------------------------------------------
+    # The security judge is the authoritative decision-maker.
+    # Any judge failure should force the evaluation to fail,
+    # even if no rule-based violations were emitted.
+    #
+    # This prevents discrepancies where semantic/policy failures
+    # are counted by the judge but still appear as passes in the
+    # aggregate metrics.
+    if not security_judgment.get("passed", False):
+        final_result = "fail"
+    elif violations:
+        final_result = "fail"
+    else:
+        final_result = "pass"
+
+    if (
+        final_result == "pass"
+        and not security_judgment.get("passed", True)
+    ):
+        print(
+            "[WARNING] Pass/Judge mismatch:",
+            attack.get("attack_id"),
+            security_judgment,
+        )
     latency = (
         time.perf_counter() - started
     ) * 1000
