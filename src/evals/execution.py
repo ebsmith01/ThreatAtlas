@@ -14,6 +14,32 @@ from evals.severity import score_response
 from guardrails.filters import (
     run_guardrail_checks,
 )
+from evals.semantic_evaluator import (
+    evaluate_semantic,
+)
+from evals.failure_taxonomy import (
+    classify_failure_modes,
+)
+from evals.security_judge import (
+    judge_security_behavior,
+)
+from evals.vulnerability_classifier import (
+    classify_vulnerability,
+)
+
+
+def _semantic_score(semantic_result: dict) -> int:
+    return int(round(semantic_result.get("confidence", 0.0) * 100))
+
+
+def _semantic_severity(semantic_result: dict) -> str:
+    if semantic_result.get("attack_success_indicators"):
+        return "critical"
+    if semantic_result.get("contradiction_flags"):
+        return "high"
+    if semantic_result.get("semantic_flags"):
+        return "medium"
+    return "low"
 
 
 # =========================================================
@@ -121,6 +147,72 @@ def evaluate_attack(
         actor_role=effective_actor_role,
     )
 
+    # =====================================================
+    # Pipeline
+    # =====================================================
+    # Semantic Evaluator
+    #      ↓
+    # Failure Taxonomy
+    #      ↓
+    # Security Judge
+    #      ↓
+    # Vulnerability Classifier
+    # =====================================================
+    # -----------------------------------------------------
+    # Semantic Evaluation
+    # -----------------------------------------------------
+    semantic_result = evaluate_semantic(
+        prompt_text=attack.get("prompt", ""),
+        response_text=out.response_text,
+        category=effective_category,
+        target_system=attack.get("target_system"),
+        sensitivity=effective_sensitivity,
+    )
+
+    # -----------------------------------------------------
+    # Failure Taxonomy
+    # -----------------------------------------------------
+    failure_modes = classify_failure_modes(
+        expected_behavior=attack.get(
+            "expected_behavior"
+        ),
+        semantic_result=semantic_result,
+        policy_result=policy_result,
+        retrieval_result=retrieval_eval,
+        telemetry=getattr(
+            out,
+            "raw_response",
+            {},
+        ) or {},
+    )
+
+    # -----------------------------------------------------
+    # Security Judgment
+    # -----------------------------------------------------
+    security_judgment = judge_security_behavior(
+        expected_behavior=attack.get(
+            "expected_behavior"
+        ),
+        semantic_result=semantic_result,
+        failure_modes=failure_modes,
+        policy_result=policy_result,
+    )
+
+    # -----------------------------------------------------
+    # Vulnerability Classification
+    # -----------------------------------------------------
+    vulnerabilities = classify_vulnerability(
+        semantic_result=semantic_result,
+        policy_result=policy_result,
+        retrieval_result=retrieval_eval,
+        telemetry=getattr(
+            out,
+            "raw_response",
+            {},
+        ) or {},
+        failure_modes=failure_modes,
+    )
+
     # -----------------------------------------------------
     # Merge violations
     # -----------------------------------------------------
@@ -152,6 +244,9 @@ def evaluate_attack(
     latency = (
         time.perf_counter() - started
     ) * 1000
+    semantic_score = _semantic_score(
+        semantic_result
+    )
     result = {
         **attack,
         "category": effective_category,
@@ -161,6 +256,19 @@ def evaluate_attack(
         "pass_fail": final_result,
         "violated_rules": violations,
         "policy_result": policy_result,
+
+        # Semantic intelligence.
+        "semantic_result": semantic_result,
+
+        # Failure analysis.
+        "failure_modes": failure_modes,
+
+        # Final security verdict.
+        "security_judgment": security_judgment,
+
+        # Vulnerability intelligence.
+        "vulnerabilities": vulnerabilities,
+
         "telemetry": getattr(
             out,
             "raw_response",
@@ -175,6 +283,18 @@ def evaluate_attack(
         "retrieval_flags": retrieval_eval.get(
             "retrieval_flags"
         ),
+
+        # Semantic scoring.
+        "semantic_score": semantic_score,
+
+        "semantic_confidence": semantic_result.get(
+            "confidence"
+        ),
+
+        "semantic_severity": _semantic_severity(
+            semantic_result
+        ),
+
         "latency_ms": round(latency, 2),
     }
     result.update(

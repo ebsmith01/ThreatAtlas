@@ -1,141 +1,40 @@
-# =========================================================
-# ThreatAtlas Terminal Summary
-# =========================================================
-# High-level runtime reporting.
-#
-# Keeps:
-# - security metrics
-# - telemetry metrics
-# - risk metrics
-# - coverage visibility
-#
-# Avoids:
-# - verbose findings
-# - individual policy violations
-# - noisy per-attack output
-# =========================================================
-
-
 def print_report(report: dict):
 
-    summary = report.get(
-        "summary",
-        {},
-    )
+    summary = report.get("summary", {}).get("overall", {})
+    risk = report.get("risk", {})
+    telemetry = report.get("telemetry_metrics", {})
+    failures = report.get("failure_summary", {})
+    vulns = report.get("vulnerability_summary", {})
+    judgments = report.get("security_judgment_summary", {})
+    semantic = report.get("semantic_summary", {})
 
-    overall = summary.get(
-        "overall",
-        {},
-    )
+    print("\n=== ThreatAtlas Security Summary ===")
 
-    telemetry = report.get(
-        "telemetry_metrics",
-        {},
-    )
+    print(f"Total Evaluations: {summary.get('total', 0)}")
+    print(f"Pass Rate: {summary.get('pass_rate', 0)}%")
+    print(f"Risk Score: {risk.get('risk_score', 0)}")
 
-    # =====================================================
-    # Summary
-    # =====================================================
+    print("\n=== Security Judgment ===")
+    print(f"Judged Pass Rate: {judgments.get('pass_rate', 0)}%")
+    print(f"Judged Failures: {judgments.get('failed', 0)}")
 
-    print("\n=== SUMMARY ===")
+    print("\n=== Top Failure Modes ===")
+    for name, count in failures.get("by_failure_mode", {}).items():
+        print(f"{name}: {count}")
 
-    for key, value in overall.items():
+    print("\n=== Top Vulnerabilities ===")
+    for name, count in vulns.get("by_vulnerability", {}).items():
+        print(f"{name}: {count}")
 
-        print(f"{key}: {value}")
+    print("\n=== Semantic Signals ===")
+    for name, count in semantic.get("semantic_flags", {}).items():
+        print(f"{name}: {count}")
 
-    # =====================================================
-    # System Risk
-    # =====================================================
+    print("\n=== Attack Success Indicators ===")
+    for name, count in semantic.get("attack_success_indicators", {}).items():
+        print(f"{name}: {count}")
 
-    system_risk = summary.get(
-        "system_risk",
-        {},
-    )
-
-    if system_risk:
-
-        print("\n=== SYSTEM RISK ===")
-
-        for key, value in system_risk.items():
-
-            print(f"{key}: {value}%")
-
-    # =====================================================
-    # System Breakdown
-    # =====================================================
-
-    by_system = summary.get(
-        "by_target_system",
-        {},
-    )
-
-    if by_system:
-
-        print("\n=== SYSTEM BREAKDOWN ===")
-
-        for system, stats in by_system.items():
-
-            print(f"\n[{system.upper()}]")
-
-            print(
-                f"  total: "
-                f"{stats.get('total', 0)}"
-            )
-
-            print(
-                f"  pass_rate: "
-                f"{stats.get('pass_rate', 0)}%"
-            )
-
-            print(
-                f"  fail: "
-                f"{stats.get('fail', 0)}"
-            )
-
-            print(
-                f"  unauthorized: "
-                f"{stats.get('unauth', 0)}"
-            )
-
-            print(
-                f"  auth_failures: "
-                f"{stats.get('auth_fail', 0)}"
-            )
-
-    # =====================================================
-    # Coverage
-    # =====================================================
-
-    coverage = report.get(
-        "coverage",
-        {},
-    )
-
-    if coverage:
-
-        print("\n=== COVERAGE ===")
-
-        for key, value in coverage.items():
-
-            print(f"{key} {value}")
-
-    # =====================================================
-    # Risk Score
-    # =====================================================
-
-    print(
-        f"\n=== RISK === "
-        f"{report['risk']['risk_score']}"
-    )
-
-    # =====================================================
-    # Telemetry
-    # =====================================================
-
-    if telemetry:
-
-        print("\n=== TELEMETRY ===")
-
-        for key, value in telemetry.items():
-
-            print(f"{key}: {value}")
+    print("\n=== Runtime Health ===")
+    print(f"Success Rate: {telemetry.get('success_rate', 0)}%")
+    print(f"Average Latency: {telemetry.get('average_latency_ms', 0)}ms")
+    print(f"Unauthorized Tool Usage Rate: {telemetry.get('unauthorized_tool_usage_rate', 0)}%")
